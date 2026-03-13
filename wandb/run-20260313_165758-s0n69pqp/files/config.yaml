@@ -1,0 +1,121 @@
+_wandb:
+    value:
+        cli_version: 0.25.1
+        e:
+            dqotjflbtqy0rbsf6nitk2kq69xdqrjd:
+                args:
+                    - --config
+                    - configs/buoy_rudder_ppo_rnn.yaml
+                codePath: purejaxrl/train_buoy.py
+                codePathLocal: purejaxrl/train_buoy.py
+                cpu_count: 14
+                cpu_count_logical: 20
+                cudaVersion: "13.1"
+                disk:
+                    /:
+                        total: "400065318912"
+                        used: "377454526464"
+                email: chernowi@gmail.com
+                executable: /home/pedro/miniconda3/envs/jaxbuoy/bin/python
+                git:
+                    commit: 6a88a3b5540efc20f983ba3c577c9e7c7969ece3
+                    remote: git@github.com:Chernowi/jaxbuoy.git
+                gpu: NVIDIA GeForce RTX 5060 Laptop GPU
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Blackwell
+                      cudaCores: 3328
+                      memoryTotal: "8546942976"
+                      name: NVIDIA GeForce RTX 5060 Laptop GPU
+                      uuid: GPU-0fbb2745-64fa-f422-e122-7550961b67a6
+                host: pedro
+                memory:
+                    total: "33344512000"
+                os: Linux-6.17.0-14-generic-x86_64-with-glibc2.39
+                program: /home/pedro/Documents/jaxbuoy/purejaxrl/train_buoy.py
+                python: CPython 3.12.12
+                root: /home/pedro/Documents/jaxbuoy
+                startedAt: "2026-03-13T15:57:58.966600Z"
+                writerId: dqotjflbtqy0rbsf6nitk2kq69xdqrjd
+        m: []
+        python_version: 3.12.12
+        t:
+            "1":
+                - 12
+                - 45
+            "2":
+                - 12
+                - 45
+            "3":
+                - 2
+                - 13
+                - 15
+                - 16
+                - 61
+                - 62
+            "4": 3.12.12
+            "5": 0.25.1
+            "12": 0.25.1
+            "13": linux-x86_64
+algorithm:
+    value:
+        name: ppo_continuous_rnn
+        params:
+            ACTIVATION: tanh
+            ANNEAL_LR: true
+            CLIP_EPS: 0.2
+            DEBUG: false
+            ENT_COEF: 0
+            GAE_LAMBDA: 0.95
+            GAMMA: 0.99
+            HIDDEN_SIZES:
+                - 128
+            LR: 0.0003
+            MAX_GRAD_NORM: 0.5
+            NORMALIZE_OBS: false
+            NORMALIZE_REWARD: true
+            NUM_ENVS: 256
+            NUM_MINIBATCHES: 8
+            NUM_STEPS: 128
+            RNN_HIDDEN_SIZE: 128
+            TOTAL_TIMESTEPS: 50000000
+            UPDATE_EPOCHS: 4
+            VF_COEF: 0.5
+environment:
+    value:
+        action_mode: simplified_rudder
+        constant_speed_mps: 2
+        decision_dt_s: 1
+        directional_samples: 8
+        explore_reward_per_cell: 0.005
+        find_fov_deg: 90
+        find_range_m: 7
+        found_reward: 100
+        max_rudder_deg: 45
+        max_speed_mps: 2
+        max_steps: 1200
+        out_of_bounds_penalty: 50
+        radius_m: 100
+        rudder_turn_rate: 0.25
+        sensor_fov_deg: 90
+        sensor_range_m: 20
+        step_reward: 0
+        thruster_yaw_rate: 0.6
+        timeout_penalty: 10
+        use_visited_grid: true
+        visited_grid_size: 64
+run:
+    value:
+        output_dir: runs
+        seed: 0
+wandb:
+    value:
+        entity: null
+        mode: online
+        project: jaxbuoy
+        tags:
+            - jax
+            - ppo
+            - buoy
+            - rudder
+            - rnn

@@ -1,0 +1,45 @@
+Traceback (most recent call last):
+  File "/home/pedro/Documents/jaxbuoy/purejaxrl/train_buoy.py", line 158, in <module>
+    mode=wandb_mode,
+    ^^^^^^
+  File "/home/pedro/Documents/jaxbuoy/purejaxrl/train_buoy.py", line 123, in main
+    args = parser.parse_args()
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/tree_util.py", line 373, in tree_map
+    return treedef.unflatten(f(*xs) for xs in zip(*all_leaves))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/tree_util.py", line 373, in <genexpr>
+    return treedef.unflatten(f(*xs) for xs in zip(*all_leaves))
+                             ^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/api.py", line 2919, in device_get
+    return tree_map(_device_get, x)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/tree_util.py", line 373, in tree_map
+    return treedef.unflatten(f(*xs) for xs in zip(*all_leaves))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/tree_util.py", line 373, in <genexpr>
+    return treedef.unflatten(f(*xs) for xs in zip(*all_leaves))
+                             ^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/api.py", line 2880, in _device_get
+    return toarray()
+           ^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/array.py", line 439, in __array__
+    return np.asarray(self._value, dtype=dtype, **kwds)
+                      ^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/profiler.py", line 384, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/array.py", line 639, in _value
+    npy_value, did_copy = self._single_device_array_to_np_array_did_copy()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+jax.errors.JaxRuntimeError: INTERNAL: CpuCallback error calling callback: Traceback (most recent call last):
+  File "/home/pedro/Documents/jaxbuoy/purejaxrl/train_buoy.py", line 158, in <module>
+  File "/home/pedro/Documents/jaxbuoy/purejaxrl/train_buoy.py", line 122, in main
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/traceback_util.py", line 198, in reraise_with_filtered_traceback
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/pjit.py", line 256, in cache_miss
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/pjit.py", line 141, in _run_python_pjit
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/pjit.py", line 1239, in _pjit_call_impl_python
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/profiler.py", line 384, in wrapper
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py", line 1354, in __call__
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/callback.py", line 816, in _wrapped_callback
+KeyboardInterrupt:

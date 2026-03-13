@@ -1,0 +1,24 @@
+2026-03-13 16:54:25,312 INFO    MainThread:543726 [wandb_setup.py:_flush():81] Current SDK version is 0.25.1
+2026-03-13 16:54:25,312 INFO    MainThread:543726 [wandb_setup.py:_flush():81] Configure stats pid to 543726
+2026-03-13 16:54:25,312 INFO    MainThread:543726 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2026-03-13 16:54:25,312 INFO    MainThread:543726 [wandb_init.py:setup_run_log_directory():717] Logging user logs to /home/pedro/Documents/jaxbuoy/wandb/run-20260313_165425-ux4eeava/logs/debug.log
+2026-03-13 16:54:25,312 INFO    MainThread:543726 [wandb_init.py:setup_run_log_directory():718] Logging internal logs to /home/pedro/Documents/jaxbuoy/wandb/run-20260313_165425-ux4eeava/logs/debug-internal.log
+2026-03-13 16:54:25,312 INFO    MainThread:543726 [wandb_init.py:init():844] calling init triggers
+2026-03-13 16:54:25,312 INFO    MainThread:543726 [wandb_init.py:init():849] wandb.init called with sweep_config: {}
+config: {'run': {'seed': 0, 'output_dir': 'runs'}, 'algorithm': {'name': 'ppo_continuous_rnn', 'params': {'LR': 0.0003, 'NUM_ENVS': 256, 'NUM_STEPS': 128, 'TOTAL_TIMESTEPS': 5000000, 'UPDATE_EPOCHS': 4, 'NUM_MINIBATCHES': 8, 'GAMMA': 0.99, 'GAE_LAMBDA': 0.95, 'CLIP_EPS': 0.2, 'ENT_COEF': 0.0, 'VF_COEF': 0.5, 'MAX_GRAD_NORM': 0.5, 'ACTIVATION': 'tanh', 'HIDDEN_SIZES': [128], 'RNN_HIDDEN_SIZE': 128, 'ANNEAL_LR': True, 'NORMALIZE_OBS': False, 'NORMALIZE_REWARD': True, 'DEBUG': False}}, 'environment': {'radius_m': 100.0, 'max_steps': 1200, 'decision_dt_s': 1.0, 'action_mode': 'simplified_rudder', 'max_speed_mps': 2.0, 'constant_speed_mps': 2.0, 'max_rudder_deg': 45.0, 'rudder_turn_rate': 0.25, 'thruster_yaw_rate': 0.6, 'find_range_m': 7.0, 'find_fov_deg': 90.0, 'found_reward': 100.0, 'out_of_bounds_penalty': 50.0, 'timeout_penalty': 10.0, 'step_reward': 0.0, 'use_visited_grid': True, 'visited_grid_size': 64, 'sensor_range_m': 20.0, 'sensor_fov_deg': 90.0, 'explore_reward_per_cell': 0.005, 'directional_samples': 8}, 'wandb': {'mode': 'online', 'project': 'jaxbuoy', 'entity': None, 'tags': ['jax', 'ppo', 'buoy', 'rudder', 'rnn']}, '_wandb': {}}
+2026-03-13 16:54:25,312 INFO    MainThread:543726 [wandb_init.py:init():892] starting backend
+2026-03-13 16:54:25,525 INFO    MainThread:543726 [wandb_init.py:init():895] sending inform_init request
+2026-03-13 16:54:25,528 INFO    MainThread:543726 [wandb_init.py:init():903] backend started and connected
+2026-03-13 16:54:25,530 INFO    MainThread:543726 [wandb_init.py:init():973] updated telemetry
+2026-03-13 16:54:25,533 INFO    MainThread:543726 [wandb_init.py:init():997] communicating run to backend with 90.0 second timeout
+2026-03-13 16:54:26,509 INFO    MainThread:543726 [wandb_init.py:init():1042] starting run threads in backend
+2026-03-13 16:54:26,570 INFO    MainThread:543726 [wandb_run.py:_console_start():2524] atexit reg
+2026-03-13 16:54:26,570 INFO    MainThread:543726 [wandb_run.py:_redirect():2373] redirect: wrap_raw
+2026-03-13 16:54:26,570 INFO    MainThread:543726 [wandb_run.py:_redirect():2442] Wrapping output streams.
+2026-03-13 16:54:26,570 INFO    MainThread:543726 [wandb_run.py:_redirect():2465] Redirects installed.
+2026-03-13 16:54:26,572 INFO    MainThread:543726 [wandb_init.py:init():1082] run started, returning control to user process
+2026-03-13 16:55:20,159 INFO    MainThread:543726 [wandb_run.py:_finish():2291] finishing run chernowi-csic/jaxbuoy/ux4eeava
+2026-03-13 16:55:20,160 INFO    MainThread:543726 [wandb_run.py:_atexit_cleanup():2490] got exitcode: 0
+2026-03-13 16:55:20,160 INFO    MainThread:543726 [wandb_run.py:_restore():2472] restore
+2026-03-13 16:55:20,160 INFO    MainThread:543726 [wandb_run.py:_restore():2478] restore done
+2026-03-13 16:55:22,639 INFO    MainThread:543726 [wandb_run.py:_footer_sync_info():3868] logging synced files

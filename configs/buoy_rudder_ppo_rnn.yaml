@@ -21,7 +21,7 @@ algorithm:
     HIDDEN_SIZES: [128]
     RNN_HIDDEN_SIZE: 128
     ANNEAL_LR: true
-    NORMALIZE_OBS: true
+    NORMALIZE_OBS: false
     NORMALIZE_REWARD: true
     DEBUG: false
 
