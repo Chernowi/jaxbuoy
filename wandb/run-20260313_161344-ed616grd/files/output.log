@@ -1,0 +1,22 @@
+Traceback (most recent call last):
+  File "/home/pedro/Documents/jaxbuoy/purejaxrl/train_buoy.py", line 158, in <module>
+    main()
+  File "/home/pedro/Documents/jaxbuoy/purejaxrl/train_buoy.py", line 122, in main
+    out = train_fn(rng)
+          ^^^^^^^^^^^^^
+  File "/home/pedro/Documents/jaxbuoy/purejaxrl/buoy_ppo_rnn.py", line 69, in train
+    network_params = network.init(net_rng, init_hstate, init_x)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/pedro/Documents/jaxbuoy/purejaxrl/buoy_models.py", line 102, in __call__
+    hidden, embedding = ScannedRNN(hidden_size=self.rnn_hidden_size)(hidden, rnn_in)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/flax/core/axes_scan.py", line 199, in scan_fn
+    c, ys = lax.scan(
+            ^^^^^^^^^
+TypeError: scan body function carry input and carry output must have equal types, but they differ:
+
+The input carry component c[1] has type float32[128] but the corresponding output carry component has type float32[256,128], so the shapes do not match.
+
+Revise the function so that all output types match the corresponding input types.
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.

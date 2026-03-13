@@ -1,0 +1,3 @@
+Run 'buoy_rudder_ppo' finished.
+Checkpoint: /home/pedro/Documents/jaxbuoy/runs/buoy_rudder_ppo/checkpoint.msgpack
+Summary: /home/pedro/Documents/jaxbuoy/runs/buoy_rudder_ppo/summary.json

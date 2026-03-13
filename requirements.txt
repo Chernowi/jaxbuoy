@@ -10,3 +10,5 @@ brax
 wandb
 flashbax
 navix
+PyYAML
+matplotlib

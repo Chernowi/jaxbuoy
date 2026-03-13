@@ -1,0 +1,57 @@
+run:
+  seed: 1
+  output_dir: runs
+
+algorithm:
+  name: ppo_continuous
+  params:
+    LR: 0.0003
+    NUM_ENVS: 256
+    NUM_STEPS: 128
+    TOTAL_TIMESTEPS: 2000000
+    UPDATE_EPOCHS: 4
+    NUM_MINIBATCHES: 8
+    GAMMA: 0.99
+    GAE_LAMBDA: 0.95
+    CLIP_EPS: 0.2
+    ENT_COEF: 0.0
+    VF_COEF: 0.5
+    MAX_GRAD_NORM: 0.5
+    ACTIVATION: tanh
+    HIDDEN_SIZES: [256, 256]
+    ANNEAL_LR: true
+    NORMALIZE_OBS: false
+    NORMALIZE_REWARD: false
+    DEBUG: false
+
+environment:
+  radius_m: 100.0
+  max_steps: 1200
+  decision_dt_s: 1.0
+  action_mode: thruster
+  max_speed_mps: 2.0
+  constant_speed_mps: 2.0
+  max_rudder_deg: 45.0
+  rudder_turn_rate: 0.25
+  thruster_yaw_rate: 0.6
+
+  find_range_m: 7.0
+  find_fov_deg: 90.0
+
+  found_reward: 100.0
+  out_of_bounds_penalty: 50.0
+  timeout_penalty: 10.0
+  step_reward: 0.0
+
+  use_visited_grid: true
+  visited_grid_size: 64
+  sensor_range_m: 20.0
+  sensor_fov_deg: 90.0
+  explore_reward_per_cell: 0.005
+  directional_samples: 8
+
+wandb:
+  mode: online
+  project: jaxbuoy
+  entity: null
+  tags: [jax, ppo, buoy, thruster]

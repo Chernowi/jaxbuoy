@@ -52,6 +52,38 @@ In order to use JAX on your accelerators, you can find more details in the [JAX 
 
 [`examples/brax_minatar.ipynb`](https://github.com/luchris429/purejaxrl/blob/main/examples/brax_minatar.ipynb) walks through using PureJaxRL for Brax and MinAtar. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/luchris429/purejaxrl/blob/main/examples/brax_minatar.ipynb)
 
+## Buoy Search Training (JaxBuoy)
+
+This repository includes a single-agent buoy search framework with:
+
+- Circular training area (100 m default radius)
+- Two action modes: `simplified_rudder` and `thruster`
+- Optional visited-grid exploration reward and directional exploration observations
+- YAML-based run configuration (algorithm + environment + W&B in one file)
+- W&B monitoring during training
+- Lightweight episode visualization tool
+
+### Train
+
+```bash
+python purejaxrl/train_buoy.py --config configs/buoy_rudder_ppo.yaml
+```
+
+Run name defaults to the YAML filename stem (for example, `buoy_rudder_ppo`).
+Outputs are saved to `runs/<run_name>/`:
+
+- `checkpoint.msgpack`
+- `config.yaml`
+- `summary.json`
+
+### Visualize
+
+```bash
+python purejaxrl/visualize_buoy.py --run buoy_rudder_ppo --speed 20
+```
+
+Use `--speed` to control playback speed.
+
 ## Related Work
 
 Check out the list of [RESOURCES](https://github.com/luchris429/purejaxrl/blob/main/RESOURCES.md) to see libraries that are closely related to PureJaxRL!

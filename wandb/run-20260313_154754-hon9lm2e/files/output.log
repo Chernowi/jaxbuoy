@@ -1,0 +1,25 @@
+Traceback (most recent call last):
+  File "/home/pedro/Documents/jaxbuoy/purejaxrl/train_buoy.py", line 126, in <module>
+    main()
+  File "/home/pedro/Documents/jaxbuoy/purejaxrl/train_buoy.py", line 90, in main
+    out = train_fn(rng)
+          ^^^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/traceback_util.py", line 198, in reraise_with_filtered_traceback
+    return fun(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/pjit.py", line 256, in cache_miss
+    executable, pgle_profiler, const_args) = _run_python_pjit(
+                                             ^^^^^^^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/pjit.py", line 141, in _run_python_pjit
+    out_flat, compiled, profiler, const_args = _pjit_call_impl_python(
+                                               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/pjit.py", line 1239, in _pjit_call_impl_python
+    return (compiled.unsafe_call(*computation.const_args, *args),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/profiler.py", line 384, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/pedro/miniconda3/envs/jaxbuoy/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py", line 1354, in __call__
+    results = self.xla_executable.execute_sharded(input_bufs, with_tokens=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
