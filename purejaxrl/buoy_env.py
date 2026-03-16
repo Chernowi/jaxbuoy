@@ -62,6 +62,8 @@ class BuoySearchEnv:
         self.include_center_distance_obs = bool(
             self.cfg.get("include_center_distance_obs", False)
         )
+        self.include_current_obs = bool(self.cfg.get("include_current_obs", False))
+        self.include_wind_obs = bool(self.cfg.get("include_wind_obs", False))
         self.max_current_speed_mps = float(self.cfg.get("max_current_speed_mps", 0.0))
         self.max_wind_speed_mps = float(self.cfg.get("max_wind_speed_mps", 0.0))
         self.wind_buoy_scale = float(self.cfg.get("wind_buoy_scale", 0.25))
@@ -86,6 +88,8 @@ class BuoySearchEnv:
         )
         self._max_current_speed_mps = max(0.0, self.max_current_speed_mps)
         self._max_wind_speed_mps = max(0.0, self.max_wind_speed_mps)
+        self._current_obs_scale = max(self._max_current_speed_mps, 1e-6)
+        self._wind_obs_scale = max(self._max_wind_speed_mps, 1e-6)
         self._wind_buoy_scale = np.clip(self.wind_buoy_scale, 0.0, 1.0)
 
         coord = jnp.linspace(
@@ -215,6 +219,20 @@ class BuoySearchEnv:
         if self.include_center_distance_obs:
             center_distance = jnp.sqrt(state.x * state.x + state.y * state.y) / self.radius_m
             obs_parts.append(center_distance)
+        if self.include_current_obs:
+            obs_parts.extend(
+                [
+                    state.current_vx / self._current_obs_scale,
+                    state.current_vy / self._current_obs_scale,
+                ]
+            )
+        if self.include_wind_obs:
+            obs_parts.extend(
+                [
+                    state.wind_vx / self._wind_obs_scale,
+                    state.wind_vy / self._wind_obs_scale,
+                ]
+            )
         base_obs = jnp.asarray(obs_parts, dtype=jnp.float32)
         if not self.use_visited:
             return base_obs
@@ -324,7 +342,13 @@ class BuoySearchEnv:
         return obs_out, state_out, reward.astype(jnp.float32), done, info
 
     def observation_space(self, params=None):
-        obs_dim = 4 + int(self.include_center_distance_obs) + (8 if self.use_visited else 0)
+        obs_dim = (
+            4
+            + int(self.include_center_distance_obs)
+            + (2 if self.include_current_obs else 0)
+            + (2 if self.include_wind_obs else 0)
+            + (8 if self.use_visited else 0)
+        )
         return spaces.Box(
             low=-jnp.inf,
             high=jnp.inf,

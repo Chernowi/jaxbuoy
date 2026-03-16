@@ -59,6 +59,7 @@ This repository includes a single-agent buoy search framework with:
 - Circular training area (100 m default radius)
 - Two action modes: `simplified_rudder` and `thruster`
 - Optional visited-grid exploration reward and directional exploration observations
+- Optional environmental force observations via `include_current_obs` and `include_wind_obs`
 - YAML-based run configuration (algorithm + environment + W&B in one file)
 - W&B monitoring during training
 - Lightweight episode visualization tool

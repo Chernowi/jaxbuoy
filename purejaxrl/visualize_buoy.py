@@ -353,7 +353,7 @@ def main():
     parser.add_argument(
         "--num-renders",
         type=int,
-        default=4,
+        default=10,
         help="Number of episodes to render (uses consecutive seeds starting at --seed)",
     )
     parser.add_argument(

@@ -22,6 +22,14 @@ Available examples:
 - `configs/buoy_rudder_ppo.yaml`
 - `configs/buoy_thruster_ppo.yaml`
 
+Environment observation options (under `environment`):
+- `include_center_distance_obs`: adds normalized distance-to-center scalar.
+- `include_current_obs`: adds normalized current vector components `[current_vx, current_vy]`.
+- `include_wind_obs`: adds normalized wind vector components `[wind_vx, wind_vy]`.
+
+Current and wind observations are normalized by `max_current_speed_mps` and
+`max_wind_speed_mps` respectively (or kept at `0` when those maxima are `0`).
+
 ## 3) Train an Agent
 
 Run from repository root:
