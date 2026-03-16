@@ -19,20 +19,83 @@ def angle_wrap(angle):
     return (angle + np.pi) % (2.0 * np.pi) - np.pi
 
 
-def _spiral_target_xy(state, env, spiral: SpiralParams):
+def build_archimedean_waypoints(
+    env,
+    spiral: SpiralParams,
+    speed_mps: float = 2.0,
+):
+    radius_limit = float(env.radius_m) - 1e-3
+    if radius_limit <= 0.0:
+        return np.asarray([[0.0, 0.0]], dtype=np.float32), float(speed_mps)
+
+    b = max(float(spiral.b_m_per_rad), 1e-6)
+
+    theta_start = max(0.0, -float(spiral.a_m) / b)
+    theta_max = max(theta_start, (radius_limit - float(spiral.a_m)) / b)
+
+    if theta_max <= theta_start:
+        theta_dense = np.asarray([theta_start], dtype=np.float32)
+    else:
+        theta_dense_step = 0.01
+        n_dense = int(np.ceil((theta_max - theta_start) / theta_dense_step)) + 1
+        theta_dense = np.linspace(theta_start, theta_max, n_dense, dtype=np.float32)
+
+    r_dense = np.clip(float(spiral.a_m) + b * theta_dense, 0.0, radius_limit)
+    x_dense = r_dense * np.cos(theta_dense)
+    y_dense = r_dense * np.sin(theta_dense)
+
+    dx = np.diff(x_dense)
+    dy = np.diff(y_dense)
+    seg_lengths = np.sqrt(dx * dx + dy * dy)
+    cumulative_s = np.concatenate(
+        [np.asarray([0.0], dtype=np.float32), np.cumsum(seg_lengths, dtype=np.float32)]
+    )
+
+    total_s = float(cumulative_s[-1]) if cumulative_s.size > 0 else 0.0
+    ds = max(float(speed_mps) * float(env.dt), 1e-6)
+
+    if total_s <= 1e-6:
+        sample_s = np.asarray([0.0], dtype=np.float32)
+    else:
+        n_samples = int(np.floor(total_s / ds)) + 1
+        sample_s = np.arange(n_samples, dtype=np.float32) * np.float32(ds)
+        if sample_s[-1] < np.float32(total_s):
+            sample_s = np.concatenate([sample_s, np.asarray([total_s], dtype=np.float32)])
+
+    x_values = np.interp(sample_s, cumulative_s, x_dense).astype(np.float32)
+    y_values = np.interp(sample_s, cumulative_s, y_dense).astype(np.float32)
+    waypoints = np.stack([x_values, y_values], axis=1).astype(np.float32)
+
+    if waypoints.shape[0] == 0:
+        waypoints = np.asarray([[0.0, 0.0]], dtype=np.float32)
+
+    return waypoints, float(speed_mps)
+
+
+def _spiral_target_xy(state, env, spiral: SpiralParams, waypoints, speed_mps: float):
     x = float(state.x)
     y = float(state.y)
-    theta_now = np.arctan2(y, x)
-    theta_target = theta_now + float(spiral.lookahead_rad)
-    target_r = float(spiral.a_m) + float(spiral.b_m_per_rad) * theta_target
-    target_r = np.clip(target_r, 0.0, float(env.radius_m) - 1e-3)
-    target_x = target_r * np.cos(theta_target)
-    target_y = target_r * np.sin(theta_target)
-    return target_x, target_y
+    radius_now = np.sqrt(x * x + y * y)
+    step_idx = int(max(0, float(state.step_count)))
+
+    ds = max(float(env.dt) * max(float(speed_mps), 1e-6), 1e-6)
+    lookahead_distance = max(radius_now, 1.0) * max(float(spiral.lookahead_rad), 0.0)
+    lookahead_steps = int(
+        np.round(lookahead_distance / ds)
+    )
+    target_idx = int(np.clip(step_idx + lookahead_steps, 0, waypoints.shape[0] - 1))
+
+    target_x, target_y = waypoints[target_idx]
+    return float(target_x), float(target_y), target_idx
 
 
-def spiral_action(state, env, spiral: SpiralParams):
-    target_x, target_y = _spiral_target_xy(state, env, spiral)
+def spiral_action(state, env, spiral: SpiralParams, waypoints=None, speed_mps: float = 2.0):
+    if waypoints is None:
+        waypoints, speed_mps = build_archimedean_waypoints(env, spiral, speed_mps=speed_mps)
+
+    target_x, target_y, _ = _spiral_target_xy(
+        state, env, spiral, waypoints=waypoints, speed_mps=speed_mps
+    )
 
     x = float(state.x)
     y = float(state.y)
@@ -42,12 +105,7 @@ def spiral_action(state, env, spiral: SpiralParams):
     heading_error = angle_wrap(desired_heading - heading)
 
     r_now = np.sqrt(x * x + y * y)
-    theta_now = np.arctan2(y, x)
-    target_r = np.clip(
-        float(spiral.a_m) + float(spiral.b_m_per_rad) * (theta_now + float(spiral.lookahead_rad)),
-        0.0,
-        float(env.radius_m),
-    )
+    target_r = np.sqrt(target_x * target_x + target_y * target_y)
     radial_error = target_r - r_now
 
     turn_cmd = (
@@ -75,7 +133,7 @@ def spiral_action(state, env, spiral: SpiralParams):
     return jnp.asarray([left, right], dtype=jnp.float32)
 
 
-def step_no_reset(env, state, action):
+def step_no_reset(env, state, action, ignore_buoy: bool = False):
     if env.action_mode == "simplified_rudder":
         steer_cmd = jnp.clip(action[0], 0.0, 1.0)
         rudder_angle = (2.0 * steer_cmd - 1.0) * env._max_rudder_rad
@@ -93,7 +151,10 @@ def step_no_reset(env, state, action):
     next_y = state.y + speed * jnp.sin(next_heading) * env.dt
 
     out_of_bounds = (next_x * next_x + next_y * next_y) > (env.radius_m * env.radius_m)
-    found = env._found_buoy(next_x, next_y, next_heading, state.buoy_x, state.buoy_y)
+    if ignore_buoy:
+        found = jnp.array(False)
+    else:
+        found = env._found_buoy(next_x, next_y, next_heading, state.buoy_x, state.buoy_y)
     next_step_count = state.step_count + 1
     timed_out = next_step_count >= env.max_steps
     done = out_of_bounds | found | timed_out
@@ -135,8 +196,15 @@ def visited_fraction(env, visited):
     return float(np.sum(visited_mask & area_mask) / denom)
 
 
-def rollout_spiral(env, seed: int, spiral: SpiralParams, max_steps: Optional[int] = None):
+def rollout_spiral(
+    env,
+    seed: int,
+    spiral: SpiralParams,
+    max_steps: Optional[int] = None,
+    include_buoy: bool = True,
+):
     max_steps = int(max_steps) if max_steps is not None else int(env.max_steps)
+    waypoints, speed_mps = build_archimedean_waypoints(env, spiral)
     key = jnp.array([0, 0], dtype=jnp.uint32)
     key = key.at[0].set(np.uint32(seed & 0xFFFFFFFF))
     obs, state = env.reset(key, None)
@@ -154,9 +222,18 @@ def rollout_spiral(env, seed: int, spiral: SpiralParams, max_steps: Optional[int
     timed_out = False
 
     for _ in range(max_steps):
-        action = spiral_action(state, env, spiral)
+        action = spiral_action(
+            state,
+            env,
+            spiral,
+            waypoints=waypoints,
+            speed_mps=speed_mps,
+        )
         _, state, reward, done_jnp, found_jnp, oob_jnp, timeout_jnp = step_no_reset(
-            env, state, action
+            env,
+            state,
+            action,
+            ignore_buoy=not bool(include_buoy),
         )
 
         cum_reward += float(reward)
@@ -193,6 +270,7 @@ def rollout_spiral(env, seed: int, spiral: SpiralParams, max_steps: Optional[int
         "coverage": float(coverage),
         "state": state,
         "obs": obs,
+        "waypoints": np.asarray(waypoints, dtype=np.float32),
     }
 
 
@@ -204,6 +282,7 @@ def estimate_spiral_coverage_time(
     max_steps: Optional[int] = None,
 ):
     max_steps = int(max_steps) if max_steps is not None else int(env.max_steps)
+    waypoints, speed_mps = build_archimedean_waypoints(env, spiral)
     key = jnp.array([0, 0], dtype=jnp.uint32)
     key = key.at[0].set(np.uint32(seed & 0xFFFFFFFF))
     _, state = env.reset(key, None)
@@ -219,7 +298,13 @@ def estimate_spiral_coverage_time(
         if step == max_steps:
             break
 
-        action = spiral_action(state, env, spiral)
+        action = spiral_action(
+            state,
+            env,
+            spiral,
+            waypoints=waypoints,
+            speed_mps=speed_mps,
+        )
         _, state, _, done_jnp, _, _, _ = step_no_reset(env, state, action)
         done = bool(done_jnp)
         if done:

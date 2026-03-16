@@ -1,0 +1,7 @@
+spiral:
+  a_m: -9.160839160839163
+  b_m_per_rad: 1.6090909090909085
+  lookahead_rad: 0.4566200466200465
+  heading_gain: 1.2
+  radial_gain: 0.8
+  thruster_forward: 0.9

@@ -10,6 +10,7 @@ from matplotlib.widgets import Button, Slider
 from buoy_env import BuoySearchEnv
 from spiral_policy import (
     SpiralParams,
+    build_archimedean_waypoints,
     estimate_spiral_coverage_time,
     rollout_spiral,
     spiral_params_dict,
@@ -43,6 +44,27 @@ def _build_spiral_from_sliders(sliders):
         radial_gain=float(sliders["radial_gain"].val),
         thruster_forward=float(sliders["thruster_forward"].val),
     )
+
+
+def _load_spiral_params_from_yaml(path: Path):
+    if not path.exists():
+        return None
+    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data = payload.get("spiral", payload)
+    return SpiralParams(
+        a_m=float(data.get("a_m", 0.0)),
+        b_m_per_rad=float(data.get("b_m_per_rad", 1.5)),
+        lookahead_rad=float(data.get("lookahead_rad", 0.45)),
+        heading_gain=float(data.get("heading_gain", 1.2)),
+        radial_gain=float(data.get("radial_gain", 0.8)),
+        thruster_forward=float(data.get("thruster_forward", 0.9)),
+    )
+
+
+def _save_spiral_params_to_yaml(path: Path, spiral: SpiralParams):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"spiral": spiral_params_dict(spiral)}
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
 def main():
@@ -80,6 +102,12 @@ def main():
     parser.add_argument("--spiral-heading-gain", type=float, default=1.2)
     parser.add_argument("--spiral-radial-gain", type=float, default=0.8)
     parser.add_argument("--spiral-thruster-forward", type=float, default=0.9)
+    parser.add_argument(
+        "--spiral-params-file",
+        type=str,
+        default="configs/spiral_params.yaml",
+        help="YAML file used to load/save spiral parameters",
+    )
 
     args = parser.parse_args()
 
@@ -103,6 +131,10 @@ def main():
         radial_gain=float(args.spiral_radial_gain),
         thruster_forward=float(args.spiral_thruster_forward),
     )
+    spiral_params_path = Path(args.spiral_params_file).expanduser().resolve()
+    yaml_spiral = _load_spiral_params_from_yaml(spiral_params_path)
+    if yaml_spiral is not None:
+        initial_spiral = yaml_spiral
 
     fig, (ax_path, ax_map) = plt.subplots(1, 2, figsize=(13, 7))
     plt.subplots_adjust(left=0.08, right=0.97, top=0.90, bottom=0.34, wspace=0.20)
@@ -120,9 +152,17 @@ def main():
     ax_path.set_title("Spiral Trajectory")
     ax_map.set_title("Visited Map")
 
-    (path_line,) = ax_path.plot([], [], c="tab:blue", linewidth=1.6, label="path")
+    (preview_spiral_line,) = ax_path.plot(
+        [],
+        [],
+        c="tab:gray",
+        linewidth=1.2,
+        linestyle="--",
+        label="archimedean waypoints",
+    )
+    (path_line,) = ax_path.plot([], [], c="tab:blue", linewidth=1.6, label="generated path")
     boat_point = ax_path.scatter([], [], c="tab:blue", s=26)
-    buoy_point = ax_path.scatter([], [], c="orange", s=45, label="buoy")
+    buoy_point = ax_path.scatter([], [], c="orange", s=45)
     heading_line, = ax_path.plot([], [], c="tab:blue", linewidth=2.2)
     ax_path.legend(loc="upper right")
 
@@ -138,6 +178,8 @@ def main():
     )
     map_boat = ax_map.scatter([], [], c="tab:blue", s=26)
     map_buoy = ax_map.scatter([], [], c="orange", s=45)
+    buoy_point.set_visible(False)
+    map_buoy.set_visible(False)
 
     info_text = fig.text(0.08, 0.94, "", ha="left", va="top", fontsize=10)
 
@@ -192,12 +234,35 @@ def main():
     reset_ax = plt.axes([0.12, 0.05, 0.18, 0.04])
     reset_btn = Button(reset_ax, "Reset sliders")
 
-    print_ax = plt.axes([0.34, 0.05, 0.26, 0.04])
+    print_ax = plt.axes([0.34, 0.05, 0.22, 0.04])
     print_btn = Button(print_ax, "Print CLI params")
 
-    def _update(_=None):
+    generate_ax = plt.axes([0.58, 0.05, 0.14, 0.04])
+    generate_btn = Button(generate_ax, "Generate")
+
+    set_params_ax = plt.axes([0.74, 0.05, 0.18, 0.04])
+    set_params_btn = Button(set_params_ax, "Set Params")
+
+    def _update_preview(_=None):
         spiral = _build_spiral_from_sliders(sliders)
-        rollout = rollout_spiral(env, args.seed, spiral, max_steps=sim_steps)
+        waypoints, _ = build_archimedean_waypoints(env, spiral)
+        preview_spiral_line.set_data(waypoints[:, 0], waypoints[:, 1])
+
+        info_text.set_text(
+            f"source={source_label} | action_mode={env.action_mode} | dt={env.dt:.2f}s | speed_max={env.max_speed_mps:.2f}m/s\n"
+            f"preview updated | waypoints={len(waypoints)} | click 'Generate' to rollout an episode | params_file={spiral_params_path}"
+        )
+        fig.canvas.draw_idle()
+
+    def _generate(_event):
+        spiral = _build_spiral_from_sliders(sliders)
+        rollout = rollout_spiral(
+            env,
+            args.seed,
+            spiral,
+            max_steps=sim_steps,
+            include_buoy=False,
+        )
         estimate = estimate_spiral_coverage_time(
             env,
             seed=args.seed,
@@ -213,7 +278,6 @@ def main():
 
         path_line.set_data(xs, ys)
         boat_point.set_offsets(np.array([[xs[-1], ys[-1]]]))
-        buoy_point.set_offsets(np.array([[float(rollout['state'].buoy_x), float(rollout['state'].buoy_y)]]))
 
         heading_len = 5.0
         hx = xs[-1] + heading_len * np.cos(headings[-1])
@@ -222,7 +286,6 @@ def main():
 
         visited_im.set_data(np.asarray(visited))
         map_boat.set_offsets(np.array([[xs[-1], ys[-1]]]))
-        map_buoy.set_offsets(np.array([[float(rollout['state'].buoy_x), float(rollout['state'].buoy_y)]]))
 
         suggested_max_steps = None
         if estimate["steps_to_target"] is not None:
@@ -240,9 +303,23 @@ def main():
 
         info_text.set_text(
             f"source={source_label} | action_mode={env.action_mode} | dt={env.dt:.2f}s | speed_max={env.max_speed_mps:.2f}m/s\n"
-            f"steps={rollout['steps']} | time={rollout['time_s']:.1f}s | coverage={100.0 * rollout['coverage']:.2f}% | outcome={outcome}\n"
+            f"steps={rollout['steps']} | episode lasted {rollout['time_s']:.1f}s | coverage={100.0 * rollout['coverage']:.2f}% | outcome={outcome}\n"
             f"target={100.0 * coverage_target:.2f}% | reached={estimate['reached']} | steps_to_target={estimate['steps_to_target']} | suggested_max_steps={suggested_max_steps}"
         )
+
+        print(
+            f"Generated episode with seed={args.seed}: steps={rollout['steps']} duration={rollout['time_s']:.1f}s outcome={outcome}"
+        )
+        fig.canvas.draw_idle()
+
+    def _set_params(_event):
+        spiral = _build_spiral_from_sliders(sliders)
+        _save_spiral_params_to_yaml(spiral_params_path, spiral)
+        info_text.set_text(
+            f"source={source_label} | action_mode={env.action_mode} | dt={env.dt:.2f}s | speed_max={env.max_speed_mps:.2f}m/s\n"
+            f"spiral parameters saved to {spiral_params_path}"
+        )
+        print(f"Saved spiral parameters to: {spiral_params_path}")
         fig.canvas.draw_idle()
 
     def _reset(_event):
@@ -263,11 +340,13 @@ def main():
         print(cli)
 
     for slider in sliders.values():
-        slider.on_changed(_update)
+        slider.on_changed(_update_preview)
     reset_btn.on_clicked(_reset)
     print_btn.on_clicked(_print_cli)
+    generate_btn.on_clicked(_generate)
+    set_params_btn.on_clicked(_set_params)
 
-    _update()
+    _update_preview()
     plt.show()
 
 
