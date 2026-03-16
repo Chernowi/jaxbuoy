@@ -13,7 +13,7 @@ algorithm:
     CURIOSITY_ACTIVATION: relu
     NUM_ENVS: 256
     NUM_STEPS: 128
-    TOTAL_TIMESTEPS: 80000000
+    TOTAL_TIMESTEPS: 50000000
     UPDATE_EPOCHS: 4
     NUM_MINIBATCHES: 8
     GAMMA: 0.99
@@ -32,8 +32,8 @@ algorithm:
 
 environment:
   radius_m: 50.0
-  max_steps: 600
-  decision_dt_s: 2.0
+  max_steps: 400
+  decision_dt_s: 1.0
   action_mode: thruster
   max_speed_mps: 2.0
   constant_speed_mps: 2.0
@@ -43,7 +43,8 @@ environment:
 
   find_range_m: 10.0
   find_fov_deg: 90.0
-  buoy_spawn_min_center_distance_m: 20.0
+  buoy_spawn_min_center_distance_m: 5.0
+  buoy_spawn_max_center_distance_m: 45.0
 
   found_reward: 100.0
   out_of_bounds_penalty: 70.0

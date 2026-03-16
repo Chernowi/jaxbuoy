@@ -178,7 +178,7 @@ def _build_eval_fn(
                         action = pi.mean()
                     rnn_hidden_out = rnn_hidden_in
 
-                next_obs, next_state, reward, next_done, found, oob, timed_out = _step_no_reset(
+                next_obs, next_state, reward, next_done, found, oob, timed_out = step_no_reset(
                     env, state_in, action
                 )
                 return (

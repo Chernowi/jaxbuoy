@@ -183,7 +183,7 @@ def _build_rollout_fn(
                         action = pi.mean()
                     rnn_hidden_out = rnn_hidden_in
 
-                next_obs, next_state, reward, next_done, found, oob, timed_out = _step_no_reset(
+                next_obs, next_state, reward, next_done, found, oob, timed_out = step_no_reset(
                     env, state_in, action
                 )
                 cum_reward_out = cum_reward_in + reward
@@ -314,7 +314,7 @@ def main():
     parser.add_argument(
         "--policy-mode",
         choices=["deterministic", "stochastic", "spiral"],
-        default="stochastic",
+        default="deterministic",
         help="Action selection mode during visualization",
     )
     parser.add_argument("--spiral-a-m", type=float, default=0.0, help="Spiral parameter a [m]")
@@ -543,8 +543,33 @@ def main():
         ax_path.set_xlabel("x [m]")
         ax_path.set_ylabel("y [m]")
 
+        spawn_min_radius = float(getattr(env, "_buoy_spawn_min_radius_m", 0.0))
+        spawn_max_radius = float(getattr(env, "_buoy_spawn_max_radius_m", radius))
+
         path_boundary = plt.Circle((0, 0), radius, fill=False, linestyle="--", linewidth=1.5)
         ax_path.add_patch(path_boundary)
+        if spawn_min_radius > 0.0:
+            spawn_min_circle = plt.Circle(
+                (0, 0),
+                spawn_min_radius,
+                fill=False,
+                linestyle=":",
+                linewidth=1.3,
+                edgecolor="tab:green",
+                label="Spawn min",
+            )
+            ax_path.add_patch(spawn_min_circle)
+        if spawn_max_radius > 0.0:
+            spawn_max_circle = plt.Circle(
+                (0, 0),
+                spawn_max_radius,
+                fill=False,
+                linestyle=":",
+                linewidth=1.3,
+                edgecolor="tab:red",
+                label="Spawn max",
+            )
+            ax_path.add_patch(spawn_max_circle)
         ax_path.scatter([buoy_x], [buoy_y], c="orange", s=40, label="Buoy")
         (trail_line,) = ax_path.plot([], [], c="tab:blue", linewidth=1.0, alpha=0.8, label="Boat path")
         boat_point = ax_path.scatter([xs[0]], [ys[0]], c="tab:blue", s=25)
@@ -569,6 +594,26 @@ def main():
 
             map_boundary = plt.Circle((0, 0), radius, fill=False, linestyle="--", linewidth=1.5)
             ax_map.add_patch(map_boundary)
+            if spawn_min_radius > 0.0:
+                map_spawn_min_circle = plt.Circle(
+                    (0, 0),
+                    spawn_min_radius,
+                    fill=False,
+                    linestyle=":",
+                    linewidth=1.3,
+                    edgecolor="tab:green",
+                )
+                ax_map.add_patch(map_spawn_min_circle)
+            if spawn_max_radius > 0.0:
+                map_spawn_max_circle = plt.Circle(
+                    (0, 0),
+                    spawn_max_radius,
+                    fill=False,
+                    linestyle=":",
+                    linewidth=1.3,
+                    edgecolor="tab:red",
+                )
+                ax_map.add_patch(map_spawn_max_circle)
             visited_im = ax_map.imshow(
                 visited_frames[0],
                 extent=(-radius, radius, -radius, radius),
@@ -597,7 +642,9 @@ def main():
             hy = ys[i] + heading_len * np.sin(headings[i])
             heading_line.set_data([xs[i], hx], [ys[i], hy])
             reward_text.set_text(
-                f"Step: {i:4d}\\nCumulative reward: {cumulative_rewards[i]:.3f}"
+                f"Step: {i:4d}\\n"
+                f"Cumulative reward: {cumulative_rewards[i]:.3f}\\n"
+                f"Spawn radius [min,max]: [{spawn_min_radius:.1f}, {spawn_max_radius:.1f}] m"
             )
             if env.use_visited:
                 visited_im.set_data(visited_frames[i])

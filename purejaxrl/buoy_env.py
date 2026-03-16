@@ -38,6 +38,9 @@ class BuoySearchEnv:
         self.buoy_spawn_min_center_distance_m = float(
             self.cfg.get("buoy_spawn_min_center_distance_m", 20.0)
         )
+        self.buoy_spawn_max_center_distance_m = float(
+            self.cfg.get("buoy_spawn_max_center_distance_m", self.radius_m)
+        )
 
         self.step_reward = float(self.cfg.get("step_reward", 0.0))
         self.found_reward = float(self.cfg.get("found_reward", 100.0))
@@ -62,6 +65,15 @@ class BuoySearchEnv:
             0.0,
             self.radius_m,
         )
+        self._buoy_spawn_max_radius_m = np.clip(
+            self.buoy_spawn_max_center_distance_m,
+            0.0,
+            self.radius_m,
+        )
+        self._buoy_spawn_max_radius_m = max(
+            self._buoy_spawn_max_radius_m,
+            self._buoy_spawn_min_radius_m,
+        )
 
         coord = jnp.linspace(
             -self.radius_m + 0.5 * self._cell_size,
@@ -79,7 +91,7 @@ class BuoySearchEnv:
     def _sample_buoy_position(self, key):
         k_r, k_theta = jax.random.split(key)
         min_r2 = self._buoy_spawn_min_radius_m * self._buoy_spawn_min_radius_m
-        max_r2 = self.radius_m * self.radius_m
+        max_r2 = self._buoy_spawn_max_radius_m * self._buoy_spawn_max_radius_m
         r = jnp.sqrt(min_r2 + (max_r2 - min_r2) * jax.random.uniform(k_r, ()))
         theta = 2.0 * jnp.pi * jax.random.uniform(k_theta, ())
         return r * jnp.cos(theta), r * jnp.sin(theta)
