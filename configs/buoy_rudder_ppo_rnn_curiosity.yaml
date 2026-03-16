@@ -57,6 +57,10 @@ environment:
   sensor_fov_deg: 90.0
   explore_reward_per_cell: 0.1
   directional_samples: 8
+  include_center_distance_obs: false
+  max_current_speed_mps: 0.0
+  max_wind_speed_mps: 0.0
+  wind_buoy_scale: 0.25
 
 wandb:
   mode: online

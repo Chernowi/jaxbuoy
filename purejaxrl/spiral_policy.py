@@ -147,14 +147,19 @@ def step_no_reset(env, state, action, ignore_buoy: bool = False):
         yaw = (right - left) * env.thruster_yaw_rate
         next_heading = env._angle_wrap(state.heading + yaw * env.dt)
 
-    next_x = state.x + speed * jnp.cos(next_heading) * env.dt
-    next_y = state.y + speed * jnp.sin(next_heading) * env.dt
+    drift_vx, drift_vy = env._boat_drift_velocity(state)
+    buoy_drift_vx, buoy_drift_vy = env._buoy_drift_velocity(state)
+
+    next_x = state.x + (speed * jnp.cos(next_heading) + drift_vx) * env.dt
+    next_y = state.y + (speed * jnp.sin(next_heading) + drift_vy) * env.dt
+    next_buoy_x = state.buoy_x + buoy_drift_vx * env.dt
+    next_buoy_y = state.buoy_y + buoy_drift_vy * env.dt
 
     out_of_bounds = (next_x * next_x + next_y * next_y) > (env.radius_m * env.radius_m)
     if ignore_buoy:
         found = jnp.array(False)
     else:
-        found = env._found_buoy(next_x, next_y, next_heading, state.buoy_x, state.buoy_y)
+        found = env._found_buoy(next_x, next_y, next_heading, next_buoy_x, next_buoy_y)
     next_step_count = state.step_count + 1
     timed_out = next_step_count >= env.max_steps
     done = out_of_bounds | found | timed_out
@@ -179,6 +184,8 @@ def step_no_reset(env, state, action, ignore_buoy: bool = False):
         x=next_x.astype(jnp.float32),
         y=next_y.astype(jnp.float32),
         heading=next_heading.astype(jnp.float32),
+        buoy_x=next_buoy_x.astype(jnp.float32),
+        buoy_y=next_buoy_y.astype(jnp.float32),
         step_count=next_step_count,
         visited=next_visited,
     )
@@ -211,6 +218,8 @@ def rollout_spiral(
 
     x_hist: List[float] = [float(state.x)]
     y_hist: List[float] = [float(state.y)]
+    buoy_x_hist: List[float] = [float(state.buoy_x)]
+    buoy_y_hist: List[float] = [float(state.buoy_y)]
     heading_hist: List[float] = [float(state.heading)]
     reward_hist: List[float] = [0.0]
     visited_hist: List[np.ndarray] = [np.asarray(state.visited)] if env.use_visited else []
@@ -239,6 +248,8 @@ def rollout_spiral(
         cum_reward += float(reward)
         x_hist.append(float(state.x))
         y_hist.append(float(state.y))
+        buoy_x_hist.append(float(state.buoy_x))
+        buoy_y_hist.append(float(state.buoy_y))
         heading_hist.append(float(state.heading))
         reward_hist.append(cum_reward)
 
@@ -258,6 +269,8 @@ def rollout_spiral(
     return {
         "x": np.asarray(x_hist, dtype=np.float32),
         "y": np.asarray(y_hist, dtype=np.float32),
+        "buoy_x": np.asarray(buoy_x_hist, dtype=np.float32),
+        "buoy_y": np.asarray(buoy_y_hist, dtype=np.float32),
         "heading": np.asarray(heading_hist, dtype=np.float32),
         "cumulative_reward": np.asarray(reward_hist, dtype=np.float32),
         "visited": visited_hist,

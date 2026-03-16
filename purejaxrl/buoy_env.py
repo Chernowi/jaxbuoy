@@ -14,6 +14,10 @@ class BuoyEnvState:
     heading: jnp.ndarray
     buoy_x: jnp.ndarray
     buoy_y: jnp.ndarray
+    current_vx: jnp.ndarray
+    current_vy: jnp.ndarray
+    wind_vx: jnp.ndarray
+    wind_vy: jnp.ndarray
     step_count: jnp.ndarray
     visited: jnp.ndarray
 
@@ -55,6 +59,12 @@ class BuoySearchEnv:
             self.cfg.get("explore_reward_per_cell", 0.005)
         )
         self.directional_samples = int(self.cfg.get("directional_samples", 8))
+        self.include_center_distance_obs = bool(
+            self.cfg.get("include_center_distance_obs", False)
+        )
+        self.max_current_speed_mps = float(self.cfg.get("max_current_speed_mps", 0.0))
+        self.max_wind_speed_mps = float(self.cfg.get("max_wind_speed_mps", 0.0))
+        self.wind_buoy_scale = float(self.cfg.get("wind_buoy_scale", 0.25))
 
         self._max_rudder_rad = jnp.deg2rad(self.max_rudder_deg)
         self._find_fov_half_rad = jnp.deg2rad(self.find_fov_deg / 2.0)
@@ -74,6 +84,9 @@ class BuoySearchEnv:
             self._buoy_spawn_max_radius_m,
             self._buoy_spawn_min_radius_m,
         )
+        self._max_current_speed_mps = max(0.0, self.max_current_speed_mps)
+        self._max_wind_speed_mps = max(0.0, self.max_wind_speed_mps)
+        self._wind_buoy_scale = np.clip(self.wind_buoy_scale, 0.0, 1.0)
 
         coord = jnp.linspace(
             -self.radius_m + 0.5 * self._cell_size,
@@ -96,10 +109,35 @@ class BuoySearchEnv:
         theta = 2.0 * jnp.pi * jax.random.uniform(k_theta, ())
         return r * jnp.cos(theta), r * jnp.sin(theta)
 
+    def _sample_environmental_forces(self, key):
+        k_current_mag, k_current_theta, k_wind_mag, k_wind_theta = jax.random.split(key, 4)
+
+        current_mag = self._max_current_speed_mps * jax.random.uniform(k_current_mag, ())
+        current_theta = 2.0 * jnp.pi * jax.random.uniform(k_current_theta, ())
+        wind_mag = self._max_wind_speed_mps * jax.random.uniform(k_wind_mag, ())
+        wind_theta = 2.0 * jnp.pi * jax.random.uniform(k_wind_theta, ())
+
+        current_vx = current_mag * jnp.cos(current_theta)
+        current_vy = current_mag * jnp.sin(current_theta)
+        wind_vx = wind_mag * jnp.cos(wind_theta)
+        wind_vy = wind_mag * jnp.sin(wind_theta)
+        return current_vx, current_vy, wind_vx, wind_vy
+
+    def _boat_drift_velocity(self, state):
+        drift_vx = state.current_vx + state.wind_vx
+        drift_vy = state.current_vy + state.wind_vy
+        return drift_vx, drift_vy
+
+    def _buoy_drift_velocity(self, state):
+        drift_vx = state.current_vx + state.wind_vx * self._wind_buoy_scale
+        drift_vy = state.current_vy + state.wind_vy * self._wind_buoy_scale
+        return drift_vx, drift_vy
+
     def _new_initial_state(self, key):
-        k_heading, k_buoy = jax.random.split(key)
+        k_heading, k_buoy, k_forces = jax.random.split(key, 3)
         heading = jax.random.uniform(k_heading, (), minval=-jnp.pi, maxval=jnp.pi)
         buoy_x, buoy_y = self._sample_buoy_position(k_buoy)
+        current_vx, current_vy, wind_vx, wind_vy = self._sample_environmental_forces(k_forces)
 
         visited = jnp.zeros((self.grid_size, self.grid_size), dtype=jnp.float32)
         state = BuoyEnvState(
@@ -108,6 +146,10 @@ class BuoySearchEnv:
             heading=heading.astype(jnp.float32),
             buoy_x=buoy_x.astype(jnp.float32),
             buoy_y=buoy_y.astype(jnp.float32),
+            current_vx=current_vx.astype(jnp.float32),
+            current_vy=current_vy.astype(jnp.float32),
+            wind_vx=wind_vx.astype(jnp.float32),
+            wind_vy=wind_vy.astype(jnp.float32),
             step_count=jnp.array(0, dtype=jnp.int32),
             visited=visited,
         )
@@ -164,15 +206,16 @@ class BuoySearchEnv:
         return jax.vmap(score_for_direction)(rel_angles)
 
     def _get_obs(self, state):
-        base_obs = jnp.array(
-            [
-                state.x / self.radius_m,
-                state.y / self.radius_m,
-                state.heading / jnp.pi,
-                state.step_count.astype(jnp.float32) / float(self.max_steps),
-            ],
-            dtype=jnp.float32,
-        )
+        obs_parts = [
+            state.x / self.radius_m,
+            state.y / self.radius_m,
+            state.heading / jnp.pi,
+            state.step_count.astype(jnp.float32) / float(self.max_steps),
+        ]
+        if self.include_center_distance_obs:
+            center_distance = jnp.sqrt(state.x * state.x + state.y * state.y) / self.radius_m
+            obs_parts.append(center_distance)
+        base_obs = jnp.asarray(obs_parts, dtype=jnp.float32)
         if not self.use_visited:
             return base_obs
         directional = self._directional_exploration_features(state).astype(jnp.float32)
@@ -207,11 +250,16 @@ class BuoySearchEnv:
             yaw = (right - left) * self.thruster_yaw_rate
             next_heading = self._angle_wrap(state.heading + yaw * self.dt)
 
-        next_x = state.x + speed * jnp.cos(next_heading) * self.dt
-        next_y = state.y + speed * jnp.sin(next_heading) * self.dt
+        drift_vx, drift_vy = self._boat_drift_velocity(state)
+        buoy_drift_vx, buoy_drift_vy = self._buoy_drift_velocity(state)
+
+        next_x = state.x + (speed * jnp.cos(next_heading) + drift_vx) * self.dt
+        next_y = state.y + (speed * jnp.sin(next_heading) + drift_vy) * self.dt
+        next_buoy_x = state.buoy_x + buoy_drift_vx * self.dt
+        next_buoy_y = state.buoy_y + buoy_drift_vy * self.dt
 
         out_of_bounds = (next_x * next_x + next_y * next_y) > (self.radius_m * self.radius_m)
-        found = self._found_buoy(next_x, next_y, next_heading, state.buoy_x, state.buoy_y)
+        found = self._found_buoy(next_x, next_y, next_heading, next_buoy_x, next_buoy_y)
         next_step_count = state.step_count + 1
         timed_out = next_step_count >= self.max_steps
         done = out_of_bounds | found | timed_out
@@ -236,8 +284,12 @@ class BuoySearchEnv:
             x=next_x.astype(jnp.float32),
             y=next_y.astype(jnp.float32),
             heading=next_heading.astype(jnp.float32),
-            buoy_x=state.buoy_x,
-            buoy_y=state.buoy_y,
+            buoy_x=next_buoy_x.astype(jnp.float32),
+            buoy_y=next_buoy_y.astype(jnp.float32),
+            current_vx=state.current_vx,
+            current_vy=state.current_vy,
+            wind_vx=state.wind_vx,
+            wind_vy=state.wind_vy,
             step_count=next_step_count,
             visited=next_visited,
         )
@@ -262,13 +314,17 @@ class BuoySearchEnv:
             "x": next_x,
             "y": next_y,
             "heading": next_heading,
-            "buoy_x": state.buoy_x,
-            "buoy_y": state.buoy_y,
+            "buoy_x": next_buoy_x,
+            "buoy_y": next_buoy_y,
+            "current_vx": state.current_vx,
+            "current_vy": state.current_vy,
+            "wind_vx": state.wind_vx,
+            "wind_vy": state.wind_vy,
         }
         return obs_out, state_out, reward.astype(jnp.float32), done, info
 
     def observation_space(self, params=None):
-        obs_dim = 4 + (8 if self.use_visited else 0)
+        obs_dim = 4 + int(self.include_center_distance_obs) + (8 if self.use_visited else 0)
         return spaces.Box(
             low=-jnp.inf,
             high=jnp.inf,

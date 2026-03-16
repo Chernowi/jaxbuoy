@@ -254,6 +254,8 @@ def _build_rollout_fn(
                 state_n.x,
                 state_n.y,
                 state_n.heading,
+                state_n.buoy_x,
+                state_n.buoy_y,
                 state_n.visited,
                 done_n,
                 found_n,
@@ -468,11 +470,11 @@ def main():
             spiral_rollout = rollout_spiral(env, episode_seed, spiral, max_steps=env.max_steps)
             xs = np.asarray(spiral_rollout["x"], dtype=np.float32)
             ys = np.asarray(spiral_rollout["y"], dtype=np.float32)
+            buoy_xs = np.asarray(spiral_rollout["buoy_x"], dtype=np.float32)
+            buoy_ys = np.asarray(spiral_rollout["buoy_y"], dtype=np.float32)
             headings = np.asarray(spiral_rollout["heading"], dtype=np.float32)
             cumulative_rewards = np.asarray(spiral_rollout["cumulative_reward"], dtype=np.float32)
             init_state = spiral_rollout["state"]
-            buoy_x = float(init_state.buoy_x)
-            buoy_y = float(init_state.buoy_y)
             visited_frames = spiral_rollout["visited"] if env.use_visited else None
             found = bool(spiral_rollout["found"])
             out_of_bounds = bool(spiral_rollout["out_of_bounds"])
@@ -492,7 +494,7 @@ def main():
                 init_state = jax.device_get(init_state)
                 frames = jax.device_get(frames)
 
-            x_hist, y_hist, heading_hist, visited_hist, done_hist, found_hist, oob_hist, timeout_hist, reward_hist = (
+            x_hist, y_hist, heading_hist, buoy_x_hist, buoy_y_hist, visited_hist, done_hist, found_hist, oob_hist, timeout_hist, reward_hist = (
                 frames
             )
             done_np = np.asarray(done_hist, dtype=bool)
@@ -510,12 +512,15 @@ def main():
             headings = np.concatenate(
                 [np.array([float(init_state.heading)]), np.asarray(heading_hist[:end_idx], dtype=np.float32)]
             )
+            buoy_xs = np.concatenate(
+                [np.array([float(init_state.buoy_x)]), np.asarray(buoy_x_hist[:end_idx], dtype=np.float32)]
+            )
+            buoy_ys = np.concatenate(
+                [np.array([float(init_state.buoy_y)]), np.asarray(buoy_y_hist[:end_idx], dtype=np.float32)]
+            )
             cumulative_rewards = np.concatenate(
                 [np.array([0.0], dtype=np.float32), np.asarray(reward_hist[:end_idx], dtype=np.float32)]
             )
-
-            buoy_x = float(init_state.buoy_x)
-            buoy_y = float(init_state.buoy_y)
             visited_frames = None
             if env.use_visited:
                 visited_frames = [np.asarray(init_state.visited)]
@@ -529,6 +534,13 @@ def main():
         print(
             f"Render {render_idx + 1}/{args.num_renders} (seed={episode_seed}) generated {len(xs)} frames in {rollout_time:.3f}s"
         )
+
+        current_vx = float(init_state.current_vx)
+        current_vy = float(init_state.current_vy)
+        wind_vx = float(init_state.wind_vx)
+        wind_vy = float(init_state.wind_vy)
+        current_mag = float(np.sqrt(current_vx * current_vx + current_vy * current_vy))
+        wind_mag = float(np.sqrt(wind_vx * wind_vx + wind_vy * wind_vy))
 
         if env.use_visited:
             fig, (ax_path, ax_map) = plt.subplots(1, 2, figsize=(12, 6))
@@ -570,10 +582,34 @@ def main():
                 label="Spawn max",
             )
             ax_path.add_patch(spawn_max_circle)
-        ax_path.scatter([buoy_x], [buoy_y], c="orange", s=40, label="Buoy")
+        buoy_point = ax_path.scatter([buoy_xs[0]], [buoy_ys[0]], c="orange", s=40, label="Buoy")
         (trail_line,) = ax_path.plot([], [], c="tab:blue", linewidth=1.0, alpha=0.8, label="Boat path")
         boat_point = ax_path.scatter([xs[0]], [ys[0]], c="tab:blue", s=25)
         heading_line, = ax_path.plot([], [], c="tab:blue", linewidth=2.0)
+
+        vector_scale = radius * 0.25
+        max_ref_mag = max(current_mag, wind_mag, 1e-6)
+        current_dx = (current_vx / max_ref_mag) * vector_scale
+        current_dy = (current_vy / max_ref_mag) * vector_scale
+        wind_dx = (wind_vx / max_ref_mag) * vector_scale
+        wind_dy = (wind_vy / max_ref_mag) * vector_scale
+        current_line, = ax_path.plot(
+            [0.0, current_dx],
+            [0.0, current_dy],
+            color="tab:green",
+            linewidth=2.0,
+            label=f"Current ({current_mag:.2f} m/s)",
+        )
+        wind_line, = ax_path.plot(
+            [0.0, wind_dx],
+            [0.0, wind_dy],
+            color="tab:red",
+            linewidth=2.0,
+            label=f"Wind ({wind_mag:.2f} m/s)",
+        )
+        ax_path.scatter([current_dx], [current_dy], c="tab:green", s=18)
+        ax_path.scatter([wind_dx], [wind_dy], c="tab:red", s=18)
+
         reward_text = ax_path.text(
             0.02,
             0.98,
@@ -638,13 +674,15 @@ def main():
         def _draw_frame(i):
             trail_line.set_data(xs[: i + 1], ys[: i + 1])
             boat_point.set_offsets(np.array([[xs[i], ys[i]]]))
+            buoy_point.set_offsets(np.array([[buoy_xs[i], buoy_ys[i]]]))
             hx = xs[i] + heading_len * np.cos(headings[i])
             hy = ys[i] + heading_len * np.sin(headings[i])
             heading_line.set_data([xs[i], hx], [ys[i], hy])
             reward_text.set_text(
                 f"Step: {i:4d}\\n"
                 f"Cumulative reward: {cumulative_rewards[i]:.3f}\\n"
-                f"Spawn radius [min,max]: [{spawn_min_radius:.1f}, {spawn_max_radius:.1f}] m"
+                f"Spawn radius [min,max]: [{spawn_min_radius:.1f}, {spawn_max_radius:.1f}] m\\n"
+                f"Current: {current_mag:.2f} m/s | Wind: {wind_mag:.2f} m/s"
             )
             if env.use_visited:
                 visited_im.set_data(visited_frames[i])
