@@ -98,8 +98,66 @@ python purejaxrl/visualize_buoy.py --run my_custom_run --output-dir runs --speed
 3. Verify `runs/<run_name>/checkpoint.msgpack` exists.
 4. Replay with `visualize_buoy.py --run <run_name>`.
 
-## 7) Troubleshooting
+## 7) Deterministic spiral baseline and coverage-based episode time
+
+You can evaluate a deterministic Archimedean-spiral policy to estimate how long it takes to visually cover the training area at agent speed.
+
+```bash
+python purejaxrl/evaluate_buoy.py \
+  --run buoy_thruster_ppo \
+  --policy-mode spiral \
+  --episodes 100
+```
+
+The JSON output includes:
+- `coverage_estimate.steps_to_target`
+- `coverage_estimate.time_to_target_s`
+- `coverage_estimate.suggested_max_steps`
+
+Use these to set `environment.max_steps` in config (optionally with a safety factor using `--max-steps-margin`).
+
+To compare trained vs deterministic spiral over the same seeds:
+
+```bash
+python purejaxrl/evaluate_buoy.py --run buoy_thruster_ppo --policy-mode deterministic --episodes 100
+python purejaxrl/evaluate_buoy.py --run buoy_thruster_ppo --policy-mode spiral --episodes 100
+```
+
+To visualize the deterministic spiral policy:
+
+```bash
+python purejaxrl/visualize_buoy.py --run buoy_thruster_ppo --policy-mode spiral --speed 20
+```
+
+To tune spiral parameters interactively:
+
+```bash
+python purejaxrl/tune_spiral_policy.py --config configs/buoy_thruster_ppo_rnn_curiosity.yaml
+```
+
+Interactive tuner controls:
+- `a [m]`, `b [m/rad]` (Archimedean spiral parameters)
+- `lookahead`, `heading_gain`, `radial_gain`
+- `thruster_forward` (used only in thruster mode)
+
+The tuner shows trajectory, visited map, coverage %, and suggested `max_steps`.
+
+## 8) Troubleshooting
 
 - **Run not found in visualization**: confirm `runs/<run_name>/` exists.
 - **No W&B logs**: check `wandb.mode` is `online`.
 - **Slow training**: reduce `TOTAL_TIMESTEPS`, `NUM_ENVS`, or `NUM_STEPS` in config for quick tests.
+
+## 9) Metric interpretation (important)
+
+- **Collector metrics** (`train/*` in W&B and `collector_metrics` in `summary.json`) are computed from episodes that happened to finish during the latest training update window.
+- **Evaluation metrics** (`episodic_return`, `success_rate`, `out_of_bounds_rate`, etc. at the top level of `summary.json`) are computed by fresh post-training rollouts from reset seeds.
+- Collector metrics can look much better than evaluation because they are a narrower on-policy slice and can be biased by which episodes finish in that window.
+
+Use evaluation metrics as the primary signal for comparing checkpoints or grid-search trials.
+
+### Observation normalization consistency
+
+- Training now respects `algorithm.params.NORMALIZE_OBS`.
+- If `NORMALIZE_OBS=true`, normalization stats are saved to `obs_norm_stats.npz` and used by evaluation/visualization.
+- For older checkpoints, evaluation/visualization automatically use `obs_norm_stats.npz` when available, even if config says `NORMALIZE_OBS=false`.

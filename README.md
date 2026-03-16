@@ -66,7 +66,7 @@ This repository includes a single-agent buoy search framework with:
 ### Train
 
 ```bash
-python purejaxrl/train_buoy.py --config configs/buoy_rudder_ppo.yaml
+python purejaxrl/train_buoy.py --config configs/buoy_thruster_ppo.yaml
 ```
 
 Run name defaults to the YAML filename stem (for example, `buoy_rudder_ppo`).
@@ -76,13 +76,80 @@ Outputs are saved to `runs/<run_name>/`:
 - `config.yaml`
 - `summary.json`
 
+### Grid Search (Buoy)
+
+Run a hyperparameter grid search using the stable curiosity config as the base. Each trial is forced to a 15M-step training budget by default:
+
+```bash
+python purejaxrl/grid_search_buoy.py \
+    --base-config configs/buoy_thruster_ppo.yaml
+```
+
+For a quick smoke test, limit the number of trials and avoid launching training:
+
+```bash
+python purejaxrl/grid_search_buoy.py \
+    --base-config configs/buoy_rudder_ppo_rnn_curiosity_stable.yaml \
+    --max-runs 2 \
+    --dry-run
+```
+
 ### Visualize
 
 ```bash
-python purejaxrl/visualize_buoy.py --run buoy_rudder_ppo --speed 20
+python purejaxrl/visualize_buoy.py --run buoy_thruster_ppo --speed 20
 ```
 
 Use `--speed` to control playback speed.
+
+To save a rendered animation instead of opening a window:
+
+```bash
+python purejaxrl/visualize_buoy.py --run buoy_thruster_ppo --save outputs/episode.mp4 --speed 20
+```
+
+Use `--render-every` to skip frames for faster generation and `--fps` to control output framerate.
+
+### Deterministic spiral baseline (coverage-time based)
+
+Evaluate a deterministic Archimedean-spiral policy (same environment config as a trained run):
+
+```bash
+python purejaxrl/evaluate_buoy.py \
+    --run buoy_thruster_ppo \
+    --policy-mode spiral \
+    --episodes 100
+```
+
+The output includes:
+- baseline episode metrics (`episodic_return`, `success_rate`, etc.)
+- `coverage_estimate.steps_to_target` and `coverage_estimate.time_to_target_s`
+- `coverage_estimate.suggested_max_steps` (using `--max-steps-margin`)
+
+Compare directly with the trained policy on the same seeds:
+
+```bash
+python purejaxrl/evaluate_buoy.py --run buoy_thruster_ppo --policy-mode deterministic --episodes 100
+python purejaxrl/evaluate_buoy.py --run buoy_thruster_ppo --policy-mode spiral --episodes 100
+```
+
+Visualize a spiral episode:
+
+```bash
+python purejaxrl/visualize_buoy.py --run buoy_thruster_ppo --policy-mode spiral --speed 20
+```
+
+Tune spiral parameters interactively with live trajectory and coverage feedback:
+
+```bash
+python purejaxrl/tune_spiral_policy.py --config configs/buoy_thruster_ppo_rnn_curiosity.yaml
+```
+
+You can also load environment settings from an existing run:
+
+```bash
+python purejaxrl/tune_spiral_policy.py --run buoy_thruster_ppo
+```
 
 ## Related Work
 

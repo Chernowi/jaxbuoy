@@ -83,9 +83,10 @@ class NormalizeVecObsEnvState:
 class NormalizeVecObservation(GymnaxWrapper):
     def reset(self, key, params=None):
         obs, state = self._env.reset(key, params)
+        obs_shape = obs.shape[1:]
         state = NormalizeVecObsEnvState(
-            mean=jnp.zeros_like(obs),
-            var=jnp.ones_like(obs),
+            mean=jnp.zeros(obs_shape, dtype=obs.dtype),
+            var=jnp.ones(obs_shape, dtype=obs.dtype),
             count=1e-4,
             env_state=state,
         )
@@ -176,7 +177,7 @@ class NormalizeVecReward(GymnaxWrapper):
         obs, env_state, reward, done, info = self._env.step(
             key, state.env_state, action, params
         )
-        return_val = state.return_val * self.gamma * (1 - done) + reward
+        return_val = (state.return_val * self.gamma + reward) * (1 - done)
 
         batch_mean = jnp.mean(return_val, axis=0)
         batch_var = jnp.var(return_val, axis=0)

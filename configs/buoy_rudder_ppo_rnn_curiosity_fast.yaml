@@ -1,49 +1,48 @@
 run:
-  seed: 0
+  seed: 42
   output_dir: runs
 
 algorithm:
-  name: ppo_continuous
+  name: ppo_continuous_rnn_curiosity
   params:
-    LR: 0.0003
+    # Conservative optimization for lower update noise.
+    LR: 0.00015
+    CURIOSITY_LR: 0.0001
 
-    # Rollout configuration (longer horizon)
-    NUM_ENVS: 128
-    NUM_STEPS: 512
-    TOTAL_TIMESTEPS: 500000000
+    # Keep intrinsic reward helpful but not dominant.
+    CURIOSITY_COEF: 0.003
+    CURIOSITY_OUTPUT_DIM: 64
+    CURIOSITY_HIDDEN_SIZES: [256, 256]
+    CURIOSITY_ACTIVATION: relu
 
-    # PPO update parameters
-    UPDATE_EPOCHS: 10
+    # Longer rollouts improve credit assignment in this long-horizon task.
+    NUM_ENVS: 256
+    NUM_STEPS: 256
+    TOTAL_TIMESTEPS: 25000000
+
+    # Slightly tighter and smoother PPO updates.
+    UPDATE_EPOCHS: 6
     NUM_MINIBATCHES: 8
-
-    # Discounting and advantage estimation
     GAMMA: 0.995
-    GAE_LAMBDA: 0.95
-
-    # PPO clipping
+    GAE_LAMBDA: 0.97
     CLIP_EPS: 0.15
-
-    # Regularization
-    ENT_COEF: 0.01
+    ENT_COEF: 0.005
     VF_COEF: 0.5
     MAX_GRAD_NORM: 0.5
 
-    # Network
     ACTIVATION: tanh
-    HIDDEN_SIZES: [256, 256]
+    HIDDEN_SIZES: [128]
+    RNN_HIDDEN_SIZE: 128
 
-    # Training stability
     ANNEAL_LR: true
-    NORMALIZE_OBS: true
+    NORMALIZE_OBS: false
     NORMALIZE_REWARD: true
-
     DEBUG: false
 
 environment:
   radius_m: 100.0
   max_steps: 1200
   decision_dt_s: 1.0
-
   action_mode: simplified_rudder
   max_speed_mps: 2.0
   constant_speed_mps: 2.0
@@ -64,11 +63,11 @@ environment:
   visited_grid_size: 64
   sensor_range_m: 20.0
   sensor_fov_deg: 90.0
-  explore_reward_per_cell: 0.005
+  explore_reward_per_cell: 0.1
   directional_samples: 8
 
 wandb:
   mode: online
   project: jaxbuoy
   entity: null
-  tags: [jax, ppo, buoy, rudder]
+  tags: [jax, ppo, buoy, rudder, rnn, curiosity, stable]

@@ -322,7 +322,7 @@ class NormalizeVecReward(GymnaxWrapper):
         obs, env_state, reward, done, info = self._env.step(
             key, state.env_state, action, params
         )
-        return_val = state.return_val * self.gamma * (1 - done) + reward
+        return_val = (state.return_val * self.gamma + reward) * (1 - done)
 
         batch_mean = jnp.mean(return_val, axis=0)
         batch_var = jnp.var(return_val, axis=0)

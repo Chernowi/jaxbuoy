@@ -1,14 +1,19 @@
 run:
-  seed: 1
+  seed: 0
   output_dir: runs
 
 algorithm:
-  name: ppo_continuous
+  name: ppo_continuous_rnn_curiosity
   params:
     LR: 0.0003
+    CURIOSITY_LR: 0.0003
+    CURIOSITY_COEF: 0.01
+    CURIOSITY_OUTPUT_DIM: 64
+    CURIOSITY_HIDDEN_SIZES: [256, 256]
+    CURIOSITY_ACTIVATION: relu
     NUM_ENVS: 256
     NUM_STEPS: 128
-    TOTAL_TIMESTEPS: 50000000
+    TOTAL_TIMESTEPS: 80000000
     UPDATE_EPOCHS: 4
     NUM_MINIBATCHES: 8
     GAMMA: 0.99
@@ -18,10 +23,11 @@ algorithm:
     VF_COEF: 0.5
     MAX_GRAD_NORM: 0.5
     ACTIVATION: tanh
-    HIDDEN_SIZES: [256, 256]
+    HIDDEN_SIZES: [128]
+    RNN_HIDDEN_SIZE: 128
     ANNEAL_LR: true
     NORMALIZE_OBS: false
-    NORMALIZE_REWARD: false
+    NORMALIZE_REWARD: true
     DEBUG: false
 
 environment:
@@ -55,4 +61,4 @@ wandb:
   mode: online
   project: jaxbuoy
   entity: null
-  tags: [jax, ppo, buoy, thruster]
+  tags: [jax, ppo, buoy, rudder, rnn, curiosity]

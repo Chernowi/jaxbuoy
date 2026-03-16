@@ -10,6 +10,13 @@ import yaml
 
 from buoy_env import BuoySearchEnv
 from buoy_models import ActorCriticContinuous, ActorCriticContinuousRNN, ScannedRNN
+from spiral_policy import (
+    build_spiral_params_from_args,
+    estimate_spiral_coverage_time,
+    rollout_spiral,
+    spiral_params_dict,
+    step_no_reset,
+)
 
 
 def _load_run_dir(run_name, output_dir):
@@ -87,57 +94,6 @@ def _select_device(device_pref):
         if device.platform == "gpu":
             return device
     return jax.devices()[0]
-
-
-def _step_no_reset(env, state, action):
-    if env.action_mode == "simplified_rudder":
-        steer_cmd = jnp.clip(action[0], 0.0, 1.0)
-        rudder_angle = (2.0 * steer_cmd - 1.0) * env._max_rudder_rad
-        next_heading = env._angle_wrap(state.heading + rudder_angle * env.rudder_turn_rate)
-        speed = jnp.clip(env.constant_speed_mps, 0.0, env.max_speed_mps)
-    else:
-        clipped = jnp.clip(action, -1.0, 1.0)
-        left = clipped[0]
-        right = clipped[1]
-        speed = jnp.clip(0.5 * (left + right) * env.max_speed_mps, 0.0, env.max_speed_mps)
-        yaw = (right - left) * env.thruster_yaw_rate
-        next_heading = env._angle_wrap(state.heading + yaw * env.dt)
-
-    next_x = state.x + speed * jnp.cos(next_heading) * env.dt
-    next_y = state.y + speed * jnp.sin(next_heading) * env.dt
-
-    out_of_bounds = (next_x * next_x + next_y * next_y) > (env.radius_m * env.radius_m)
-    found = env._found_buoy(next_x, next_y, next_heading, state.buoy_x, state.buoy_y)
-    next_step_count = state.step_count + 1
-    timed_out = next_step_count >= env.max_steps
-    done = out_of_bounds | found | timed_out
-
-    if env.use_visited:
-        next_visited, explore_reward = env._update_visited(
-            state.visited, next_x, next_y, next_heading
-        )
-    else:
-        next_visited = state.visited
-        explore_reward = jnp.array(0.0, dtype=jnp.float32)
-
-    reward = (
-        env.step_reward
-        + explore_reward
-        + found.astype(jnp.float32) * env.found_reward
-        - out_of_bounds.astype(jnp.float32) * env.out_of_bounds_penalty
-        - timed_out.astype(jnp.float32) * env.timeout_penalty
-    )
-
-    next_state = state.replace(
-        x=next_x.astype(jnp.float32),
-        y=next_y.astype(jnp.float32),
-        heading=next_heading.astype(jnp.float32),
-        step_count=next_step_count,
-        visited=next_visited,
-    )
-    next_obs = env._get_obs(next_state)
-
-    return next_obs, next_state, reward.astype(jnp.float32), done, found, out_of_bounds, timed_out
 
 
 def _build_eval_fn(
@@ -317,8 +273,37 @@ def _summarize(values):
     }
 
 
+def _evaluate_spiral_policy(env, episodes, seed, spiral):
+    episodic_return = []
+    episodic_length = []
+    success = []
+    out_of_bounds = []
+    timed_out = []
+    coverage = []
+
+    for episode_idx in range(int(episodes)):
+        ep_seed = int(seed) + int(episode_idx)
+        rollout = rollout_spiral(env, seed=ep_seed, spiral=spiral, max_steps=env.max_steps)
+
+        episodic_return.append(float(rollout["cumulative_reward"][-1]))
+        episodic_length.append(float(rollout["steps"]))
+        success.append(1.0 if rollout["found"] else 0.0)
+        out_of_bounds.append(1.0 if rollout["out_of_bounds"] else 0.0)
+        timed_out.append(1.0 if rollout["timed_out"] else 0.0)
+        coverage.append(float(rollout["coverage"]))
+
+    return {
+        "episodic_return": _summarize(np.asarray(episodic_return, dtype=np.float32)),
+        "episodic_length": _summarize(np.asarray(episodic_length, dtype=np.float32)),
+        "success_rate": float(np.mean(np.asarray(success, dtype=np.float32))),
+        "out_of_bounds_rate": float(np.mean(np.asarray(out_of_bounds, dtype=np.float32))),
+        "timeout_rate": float(np.mean(np.asarray(timed_out, dtype=np.float32))),
+        "coverage": _summarize(np.asarray(coverage, dtype=np.float32)),
+    }
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate trained buoy policy without visualization")
+    parser = argparse.ArgumentParser(description="Evaluate trained buoy policy or deterministic spiral baseline")
     parser.add_argument("--run", required=True, help="Run name (folder under output_dir)")
     parser.add_argument(
         "--output-dir",
@@ -339,9 +324,52 @@ def main():
     )
     parser.add_argument(
         "--policy-mode",
-        choices=["deterministic", "stochastic"],
+        choices=["deterministic", "stochastic", "spiral"],
         default="stochastic",
-        help="Action selection mode: deterministic uses policy mean, stochastic samples policy",
+        help="Action selection mode: deterministic/stochastic for learned policy, spiral for deterministic Archimedean baseline",
+    )
+    parser.add_argument("--spiral-a-m", type=float, default=0.0, help="Spiral parameter a [m]")
+    parser.add_argument(
+        "--spiral-b-m-per-rad",
+        type=float,
+        default=1.5,
+        help="Spiral parameter b [m/rad]",
+    )
+    parser.add_argument(
+        "--spiral-lookahead-rad",
+        type=float,
+        default=0.45,
+        help="Lookahead angle for target point on spiral [rad]",
+    )
+    parser.add_argument(
+        "--spiral-heading-gain",
+        type=float,
+        default=1.2,
+        help="Heading error gain for spiral controller",
+    )
+    parser.add_argument(
+        "--spiral-radial-gain",
+        type=float,
+        default=0.8,
+        help="Radial error gain for spiral controller",
+    )
+    parser.add_argument(
+        "--spiral-thruster-forward",
+        type=float,
+        default=0.9,
+        help="Forward thruster command in spiral mode (thruster action mode only)",
+    )
+    parser.add_argument(
+        "--coverage-target",
+        type=float,
+        default=0.995,
+        help="Visited-area fraction target used for spiral max-time estimate",
+    )
+    parser.add_argument(
+        "--max-steps-margin",
+        type=float,
+        default=1.1,
+        help="Safety multiplier to convert spiral target-coverage steps into a suggested environment max_steps",
     )
     parser.add_argument(
         "--device",
@@ -365,73 +393,112 @@ def main():
     algo_cfg = full_cfg.get("algorithm", {})
 
     env = BuoySearchEnv(env_cfg)
-    network, is_rnn = _build_network(algo_cfg, env)
+    spiral = build_spiral_params_from_args(args)
 
-    obs_dim = int(env.observation_space(None).shape[0])
-    normalize_obs_enabled = bool(algo_cfg.get("params", {}).get("NORMALIZE_OBS", False))
-    obs_norm_stats = _load_obs_norm_stats(run_dir, obs_dim)
-    if normalize_obs_enabled and obs_norm_stats is None:
-        print(
-            "Warning: this run was trained with NORMALIZE_OBS=true, but obs_norm_stats.npz "
-            "was not found. Evaluation policy inputs are unnormalized and may not match training behavior."
+    if args.policy_mode == "spiral":
+        spiral_eval = _evaluate_spiral_policy(env, args.episodes, args.seed, spiral)
+        coverage_estimate = estimate_spiral_coverage_time(
+            env,
+            seed=args.seed,
+            spiral=spiral,
+            coverage_target=float(np.clip(args.coverage_target, 0.0, 1.0)),
+            max_steps=env.max_steps,
         )
+        if coverage_estimate["steps_to_target"] is not None:
+            suggested_max_steps = int(
+                np.ceil(coverage_estimate["steps_to_target"] * max(args.max_steps_margin, 1.0))
+            )
+        else:
+            suggested_max_steps = None
 
-    device = _select_device(args.device)
-    print(f"Using JAX device: {device}")
-
-    init_key = jax.random.PRNGKey(args.seed)
-    init_obs, _ = env.reset(init_key, None)
-    if is_rnn:
-        rnn_hidden_size = int(algo_cfg.get("params", {}).get("RNN_HIDDEN_SIZE", 128))
-        init_hidden = ScannedRNN.initialize_carry(1, rnn_hidden_size)
-        init_obs_batch = jnp.zeros((1, 1, *init_obs.shape), dtype=init_obs.dtype)
-        init_done_batch = jnp.zeros((1, 1), dtype=bool)
-        init_params = network.init(
-            jax.random.PRNGKey(args.seed + 1),
-            init_hidden,
-            (init_obs_batch, init_done_batch),
-        )
-    else:
-        rnn_hidden_size = 1
-        init_params = network.init(
-            jax.random.PRNGKey(args.seed + 1),
-            jnp.zeros_like(init_obs),
-        )
-
-    checkpoint_bytes = (run_dir / "checkpoint.msgpack").read_bytes()
-    params = flax.serialization.from_bytes(init_params, checkpoint_bytes)
-    params = jax.device_put(params, device)
-    if obs_norm_stats is not None:
-        obs_norm_stats = {
-            "mean": jax.device_put(obs_norm_stats["mean"], device),
-            "var": jax.device_put(obs_norm_stats["var"], device),
+        summary = {
+            "run": args.run,
+            "episodes": int(args.episodes),
+            "seed": int(args.seed),
+            "policy_mode": args.policy_mode,
+            "spiral_params": spiral_params_dict(spiral),
+            **spiral_eval,
+            "coverage_estimate": {
+                **coverage_estimate,
+                "suggested_max_steps": suggested_max_steps,
+                "current_env_max_steps": int(env.max_steps),
+                "margin_multiplier": float(max(args.max_steps_margin, 1.0)),
+            },
         }
+    else:
+        network, is_rnn = _build_network(algo_cfg, env)
 
-    eval_fn = _build_eval_fn(
-        env,
-        network,
-        params,
-        is_rnn,
-        obs_norm_stats,
-        rnn_hidden_size,
-        args.policy_mode,
-    )
+        obs_dim = int(env.observation_space(None).shape[0])
+        normalize_obs_enabled = bool(algo_cfg.get("params", {}).get("NORMALIZE_OBS", False))
+        obs_norm_stats = _load_obs_norm_stats(run_dir, obs_dim)
+        if normalize_obs_enabled and obs_norm_stats is None:
+            print(
+                "Warning: this run was trained with NORMALIZE_OBS=true, but obs_norm_stats.npz "
+                "was not found. Evaluation policy inputs are unnormalized and may not match training behavior."
+            )
+        elif (not normalize_obs_enabled) and obs_norm_stats is not None:
+            print(
+                "Warning: config says NORMALIZE_OBS=false, but obs_norm_stats.npz exists. "
+                "Applying saved normalization stats for compatibility with checkpoints trained "
+                "with observation normalization enabled."
+            )
 
-    keys = jax.random.split(jax.random.PRNGKey(args.seed), args.episodes)
-    with jax.default_device(device):
-        result = jax.device_get(eval_fn(keys))
+        device = _select_device(args.device)
+        print(f"Using JAX device: {device}")
 
-    summary = {
-        "run": args.run,
-        "episodes": int(args.episodes),
-        "seed": int(args.seed),
-        "policy_mode": args.policy_mode,
-        "episodic_return": _summarize(result["episodic_return"]),
-        "episodic_length": _summarize(result["episodic_length"]),
-        "success_rate": float(np.mean(np.asarray(result["success"], dtype=np.float32))),
-        "out_of_bounds_rate": float(np.mean(np.asarray(result["out_of_bounds"], dtype=np.float32))),
-        "timeout_rate": float(np.mean(np.asarray(result["timed_out"], dtype=np.float32))),
-    }
+        init_key = jax.random.PRNGKey(args.seed)
+        init_obs, _ = env.reset(init_key, None)
+        if is_rnn:
+            rnn_hidden_size = int(algo_cfg.get("params", {}).get("RNN_HIDDEN_SIZE", 128))
+            init_hidden = ScannedRNN.initialize_carry(1, rnn_hidden_size)
+            init_obs_batch = jnp.zeros((1, 1, *init_obs.shape), dtype=init_obs.dtype)
+            init_done_batch = jnp.zeros((1, 1), dtype=bool)
+            init_params = network.init(
+                jax.random.PRNGKey(args.seed + 1),
+                init_hidden,
+                (init_obs_batch, init_done_batch),
+            )
+        else:
+            rnn_hidden_size = 1
+            init_params = network.init(
+                jax.random.PRNGKey(args.seed + 1),
+                jnp.zeros_like(init_obs),
+            )
+
+        checkpoint_bytes = (run_dir / "checkpoint.msgpack").read_bytes()
+        params = flax.serialization.from_bytes(init_params, checkpoint_bytes)
+        params = jax.device_put(params, device)
+        if obs_norm_stats is not None:
+            obs_norm_stats = {
+                "mean": jax.device_put(obs_norm_stats["mean"], device),
+                "var": jax.device_put(obs_norm_stats["var"], device),
+            }
+
+        eval_fn = _build_eval_fn(
+            env,
+            network,
+            params,
+            is_rnn,
+            obs_norm_stats,
+            rnn_hidden_size,
+            args.policy_mode,
+        )
+
+        keys = jax.random.split(jax.random.PRNGKey(args.seed), args.episodes)
+        with jax.default_device(device):
+            result = jax.device_get(eval_fn(keys))
+
+        summary = {
+            "run": args.run,
+            "episodes": int(args.episodes),
+            "seed": int(args.seed),
+            "policy_mode": args.policy_mode,
+            "episodic_return": _summarize(result["episodic_return"]),
+            "episodic_length": _summarize(result["episodic_length"]),
+            "success_rate": float(np.mean(np.asarray(result["success"], dtype=np.float32))),
+            "out_of_bounds_rate": float(np.mean(np.asarray(result["out_of_bounds"], dtype=np.float32))),
+            "timeout_rate": float(np.mean(np.asarray(result["timed_out"], dtype=np.float32))),
+        }
 
     print(json.dumps(summary, indent=2))
 

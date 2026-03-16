@@ -1,8 +1,0 @@
-{
-  "global_step": 49971200,
-  "episodic_return": 10.890718460083008,
-  "episodic_length": 1030.6944580078125,
-  "success_rate": 0.1388888955116272,
-  "out_of_bounds_rate": 0.0555555559694767,
-  "timeout_rate": 0.8055555820465088
-}
