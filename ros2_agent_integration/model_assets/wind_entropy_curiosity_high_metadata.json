@@ -1,0 +1,22 @@
+{
+  "run_name": "wind_entropy_curiosity_high",
+  "algorithm": "ppo_continuous_rnn_curiosity",
+  "activation": "tanh",
+  "hidden_sizes": [
+    128
+  ],
+  "rnn_hidden_size": 128,
+  "obs_dim": 12,
+  "action_dim": 2,
+  "action_mode": "thruster",
+  "obs_layout": {
+    "x_norm": true,
+    "y_norm": true,
+    "heading_norm_pi": true,
+    "episode_time_norm": true,
+    "center_distance_norm": false,
+    "current_vx_vy": false,
+    "wind_vx_vy": false,
+    "directional_exploration_8": true
+  }
+}

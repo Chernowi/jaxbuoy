@@ -267,12 +267,17 @@ def make_train(ppo_cfg, env_cfg, wandb_enabled=False):
                     jnp.nan,
                 )
 
+            buoy_out_of_bounds_episode_ratio = safe_mean(
+                info["returned_episode_buoy_out_of_bounds"].astype(jnp.float32)
+            )
+
             metric = {
                 "global_step": (update_idx + 1) * cfg["NUM_STEPS"] * cfg["NUM_ENVS"],
                 "episodic_return": safe_mean(info["returned_episode_returns"]),
                 "episodic_length": safe_mean(info["returned_episode_lengths"]),
                 "success_rate": safe_mean(info["success"].astype(jnp.float32)),
                 "out_of_bounds_rate": safe_mean(info["out_of_bounds"].astype(jnp.float32)),
+                "buoy_out_of_bounds_episode_ratio": buoy_out_of_bounds_episode_ratio,
                 "timeout_rate": safe_mean(info["timed_out"].astype(jnp.float32)),
                 "explore_reward_mean": jnp.mean(info["explore_reward"]),
                 "loss_total": jnp.mean(loss_info[0]),
@@ -296,6 +301,9 @@ def make_train(ppo_cfg, env_cfg, wandb_enabled=False):
                         "train/episodic_length": float(m["episodic_length"]),
                         "train/success_rate": float(m["success_rate"]),
                         "train/out_of_bounds_rate": float(m["out_of_bounds_rate"]),
+                        "train/buoy_out_of_bounds_episode_ratio": float(
+                            m["buoy_out_of_bounds_episode_ratio"]
+                        ),
                         "train/timeout_rate": float(m["timeout_rate"]),
                         "train/explore_reward_mean": float(m["explore_reward_mean"]),
                         "loss/total": float(m["loss_total"]),

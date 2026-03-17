@@ -67,7 +67,7 @@ This repository includes a single-agent buoy search framework with:
 ### Train
 
 ```bash
-python purejaxrl/train_buoy.py --config configs/buoy_thruster_ppo.yaml
+python purejaxrl/train_buoy.py --config configs/buoy_thruster_ppo_rnn_curiosity_wind.yaml
 ```
 
 Run name defaults to the YAML filename stem (for example, `buoy_rudder_ppo`).
@@ -117,7 +117,7 @@ Evaluate a deterministic Archimedean-spiral policy (same environment config as a
 
 ```bash
 python purejaxrl/evaluate_buoy.py \
-    --run buoy_thruster_ppo \
+    --run buoy_thruster_ppo_rnn_curiosity_wind \
     --policy-mode spiral \
     --episodes 100
 ```
@@ -130,7 +130,7 @@ The output includes:
 Compare directly with the trained policy on the same seeds:
 
 ```bash
-python purejaxrl/evaluate_buoy.py --run buoy_thruster_ppo --policy-mode deterministic --episodes 100
+python purejaxrl/evaluate_buoy.py --run buoy_thruster_ppo_rnn_curiosity_wind --policy-mode deterministic --episodes 100
 python purejaxrl/evaluate_buoy.py --run buoy_thruster_ppo --policy-mode spiral --episodes 100
 ```
 

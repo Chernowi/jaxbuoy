@@ -11,9 +11,9 @@ import yaml
 from buoy_env import BuoySearchEnv
 from buoy_models import ActorCriticContinuous, ActorCriticContinuousRNN, ScannedRNN
 from spiral_policy import (
+    build_archimedean_waypoints,
     build_spiral_params_from_args,
     estimate_spiral_coverage_time,
-    rollout_spiral,
     spiral_params_dict,
     step_no_reset,
 )
@@ -273,32 +273,156 @@ def _summarize(values):
     }
 
 
-def _evaluate_spiral_policy(env, episodes, seed, spiral):
-    episodic_return = []
-    episodic_length = []
-    success = []
-    out_of_bounds = []
-    timed_out = []
-    coverage = []
+def _angle_wrap_jax(angle):
+    return (angle + jnp.pi) % (2.0 * jnp.pi) - jnp.pi
 
-    for episode_idx in range(int(episodes)):
-        ep_seed = int(seed) + int(episode_idx)
-        rollout = rollout_spiral(env, seed=ep_seed, spiral=spiral, max_steps=env.max_steps)
 
-        episodic_return.append(float(rollout["cumulative_reward"][-1]))
-        episodic_length.append(float(rollout["steps"]))
-        success.append(1.0 if rollout["found"] else 0.0)
-        out_of_bounds.append(1.0 if rollout["out_of_bounds"] else 0.0)
-        timed_out.append(1.0 if rollout["timed_out"] else 0.0)
-        coverage.append(float(rollout["coverage"]))
+def _build_spiral_eval_fn(env, spiral):
+    waypoints_np, speed_mps = build_archimedean_waypoints(env, spiral)
+    waypoints = jnp.asarray(waypoints_np, dtype=jnp.float32)
+    ds = jnp.asarray(max(float(env.dt) * max(float(speed_mps), 1e-6), 1e-6), dtype=jnp.float32)
+    spiral_heading_gain = jnp.asarray(float(spiral.heading_gain), dtype=jnp.float32)
+    spiral_radial_gain = jnp.asarray(float(spiral.radial_gain), dtype=jnp.float32)
+    spiral_lookahead = jnp.asarray(max(float(spiral.lookahead_rad), 0.0), dtype=jnp.float32)
+    spiral_thruster_forward = jnp.asarray(np.clip(float(spiral.thruster_forward), 0.0, 1.0), dtype=jnp.float32)
+
+    if env.use_visited:
+        area_mask = jnp.asarray(np.asarray(env._in_train_area_mask), dtype=bool)
+        area_denom = jnp.asarray(max(int(np.sum(np.asarray(env._in_train_area_mask))), 1), dtype=jnp.float32)
+    else:
+        area_mask = None
+        area_denom = None
+
+    def _spiral_action(state):
+        x = state.x
+        y = state.y
+        heading = state.heading
+
+        radius_now = jnp.sqrt(x * x + y * y)
+        step_idx = jnp.maximum(state.step_count, 0).astype(jnp.int32)
+        lookahead_distance = jnp.maximum(radius_now, 1.0) * spiral_lookahead
+        lookahead_steps = jnp.rint(lookahead_distance / ds).astype(jnp.int32)
+        target_idx = jnp.clip(step_idx + lookahead_steps, 0, waypoints.shape[0] - 1)
+        target_x = waypoints[target_idx, 0]
+        target_y = waypoints[target_idx, 1]
+
+        desired_heading = jnp.arctan2(target_y - y, target_x - x)
+        heading_error = _angle_wrap_jax(desired_heading - heading)
+
+        r_now = radius_now
+        target_r = jnp.sqrt(target_x * target_x + target_y * target_y)
+        radial_error = target_r - r_now
+
+        turn_cmd = (
+            spiral_heading_gain * heading_error
+            + spiral_radial_gain * (radial_error / max(float(env.radius_m), 1e-6))
+        )
+
+        if env.action_mode == "simplified_rudder":
+            max_heading_change = float(env._max_rudder_rad) * float(env.rudder_turn_rate)
+            if max_heading_change <= 1e-6:
+                steer = jnp.asarray(0.5, dtype=jnp.float32)
+            else:
+                steer = 0.5 + 0.5 * jnp.clip(turn_cmd / max_heading_change, -1.0, 1.0)
+            return jnp.asarray([jnp.clip(steer, 0.0, 1.0)], dtype=jnp.float32)
+
+        yaw_scale = float(env.thruster_yaw_rate) * float(env.dt)
+        if yaw_scale <= 1e-6:
+            diff = jnp.asarray(0.0, dtype=jnp.float32)
+        else:
+            diff = jnp.clip(turn_cmd / yaw_scale, -2.0, 2.0)
+
+        left = jnp.clip(spiral_thruster_forward - 0.5 * diff, -1.0, 1.0)
+        right = jnp.clip(spiral_thruster_forward + 0.5 * diff, -1.0, 1.0)
+        return jnp.asarray([left, right], dtype=jnp.float32)
+
+    def _coverage_from_state(state):
+        if not env.use_visited:
+            return jnp.asarray(0.0, dtype=jnp.float32)
+        visited_mask = state.visited >= 0.5
+        covered = jnp.sum(jnp.logical_and(visited_mask, area_mask)).astype(jnp.float32)
+        return covered / area_denom
+
+    def _rollout_single(key):
+        _obs0, state0 = env.reset(key, None)
+
+        carry = (
+            state0,
+            jnp.array(False),
+            jnp.array(0.0, dtype=jnp.float32),
+            jnp.array(0, dtype=jnp.int32),
+            jnp.array(False),
+            jnp.array(False),
+            jnp.array(False),
+        )
+
+        def _scan_step(carry_in, _):
+            state_t, done_t, cum_reward_t, length_t, found_t, oob_t, timeout_t = carry_in
+
+            def _active_step(args):
+                state_in, cum_reward_in, length_in, _found_in, _oob_in, _timeout_in = args
+                action = _spiral_action(state_in)
+                _obs, next_state, reward, next_done, found, oob, timed_out = step_no_reset(
+                    env, state_in, action
+                )
+                return (
+                    next_state,
+                    next_done,
+                    cum_reward_in + reward,
+                    length_in + 1,
+                    found,
+                    oob,
+                    timed_out,
+                )
+
+            def _inactive_step(args):
+                state_in, cum_reward_in, length_in, found_in, oob_in, timeout_in = args
+                return (
+                    state_in,
+                    jnp.array(True),
+                    cum_reward_in,
+                    length_in,
+                    found_in,
+                    oob_in,
+                    timeout_in,
+                )
+
+            carry_out = jax.lax.cond(
+                done_t,
+                _inactive_step,
+                _active_step,
+                (state_t, cum_reward_t, length_t, found_t, oob_t, timeout_t),
+            )
+            return carry_out, ()
+
+        final_carry, _ = jax.lax.scan(_scan_step, carry, xs=None, length=env.max_steps)
+        state_f, _done, cum_reward, episode_length, found, out_of_bounds, timed_out = final_carry
+
+        return {
+            "episodic_return": cum_reward,
+            "episodic_length": episode_length.astype(jnp.float32),
+            "success": found.astype(jnp.float32),
+            "out_of_bounds": out_of_bounds.astype(jnp.float32),
+            "timed_out": timed_out.astype(jnp.float32),
+            "coverage": _coverage_from_state(state_f),
+        }
+
+    return jax.jit(jax.vmap(_rollout_single))
+
+
+def _evaluate_spiral_policy(env, episodes, seed, device, spiral):
+    eval_fn = _build_spiral_eval_fn(env, spiral)
+    keys = jax.random.split(jax.random.PRNGKey(int(seed)), int(episodes))
+    with jax.default_device(device):
+        result = jax.device_get(eval_fn(keys))
 
     return {
-        "episodic_return": _summarize(np.asarray(episodic_return, dtype=np.float32)),
-        "episodic_length": _summarize(np.asarray(episodic_length, dtype=np.float32)),
-        "success_rate": float(np.mean(np.asarray(success, dtype=np.float32))),
-        "out_of_bounds_rate": float(np.mean(np.asarray(out_of_bounds, dtype=np.float32))),
-        "timeout_rate": float(np.mean(np.asarray(timed_out, dtype=np.float32))),
-        "coverage": _summarize(np.asarray(coverage, dtype=np.float32)),
+        "episodic_return": _summarize(result["episodic_return"]),
+        "episodic_length": _summarize(result["episodic_length"]),
+        "success_rate": float(np.mean(np.asarray(result["success"], dtype=np.float32))),
+        "out_of_bounds_rate": float(np.mean(np.asarray(result["out_of_bounds"], dtype=np.float32))),
+        "timeout_rate": float(np.mean(np.asarray(result["timed_out"], dtype=np.float32))),
+        "coverage": _summarize(result["coverage"]),
     }
 
 
@@ -394,9 +518,11 @@ def main():
 
     env = BuoySearchEnv(env_cfg)
     spiral = build_spiral_params_from_args(args)
+    device = _select_device(args.device)
+    print(f"Using JAX device: {device}")
 
     if args.policy_mode == "spiral":
-        spiral_eval = _evaluate_spiral_policy(env, args.episodes, args.seed, spiral)
+        spiral_eval = _evaluate_spiral_policy(env, args.episodes, args.seed, device, spiral)
         coverage_estimate = estimate_spiral_coverage_time(
             env,
             seed=args.seed,
@@ -442,9 +568,6 @@ def main():
                 "Applying saved normalization stats for compatibility with checkpoints trained "
                 "with observation normalization enabled."
             )
-
-        device = _select_device(args.device)
-        print(f"Using JAX device: {device}")
 
         init_key = jax.random.PRNGKey(args.seed)
         init_obs, _ = env.reset(init_key, None)

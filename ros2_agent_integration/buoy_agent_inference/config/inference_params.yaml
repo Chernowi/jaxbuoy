@@ -1,0 +1,9 @@
+buoy_inference_node:
+  ros__parameters:
+    model_path: "ros2_agent_integration/model_assets/wind_entropy_curiosity_high_policy.npz"
+    metadata_path: "ros2_agent_integration/model_assets/wind_entropy_curiosity_high_metadata.json"
+    obs_topic: "/agent/observation"
+    action_topic: "/agent/action"
+    reset_topic: "/agent/reset_rnn"
+    deterministic: true
+    clip_actions: true

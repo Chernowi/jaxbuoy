@@ -23,6 +23,7 @@ Available examples:
 - `configs/buoy_thruster_ppo.yaml`
 
 Environment observation options (under `environment`):
+- `include_episode_time_obs`: adds normalized episode progress scalar (`step_count / max_steps`).
 - `include_center_distance_obs`: adds normalized distance-to-center scalar.
 - `include_current_obs`: adds normalized current vector components `[current_vx, current_vy]`.
 - `include_wind_obs`: adds normalized wind vector components `[wind_vx, wind_vy]`.

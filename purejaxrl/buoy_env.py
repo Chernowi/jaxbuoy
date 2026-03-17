@@ -62,6 +62,9 @@ class BuoySearchEnv:
         self.include_center_distance_obs = bool(
             self.cfg.get("include_center_distance_obs", False)
         )
+        self.include_episode_time_obs = bool(
+            self.cfg.get("include_episode_time_obs", True)
+        )
         self.include_current_obs = bool(self.cfg.get("include_current_obs", False))
         self.include_wind_obs = bool(self.cfg.get("include_wind_obs", False))
         self.max_current_speed_mps = float(self.cfg.get("max_current_speed_mps", 0.0))
@@ -214,8 +217,9 @@ class BuoySearchEnv:
             state.x / self.radius_m,
             state.y / self.radius_m,
             state.heading / jnp.pi,
-            state.step_count.astype(jnp.float32) / float(self.max_steps),
         ]
+        if self.include_episode_time_obs:
+            obs_parts.append(state.step_count.astype(jnp.float32) / float(self.max_steps))
         if self.include_center_distance_obs:
             center_distance = jnp.sqrt(state.x * state.x + state.y * state.y) / self.radius_m
             obs_parts.append(center_distance)
@@ -275,6 +279,9 @@ class BuoySearchEnv:
         next_y = state.y + (speed * jnp.sin(next_heading) + drift_vy) * self.dt
         next_buoy_x = state.buoy_x + buoy_drift_vx * self.dt
         next_buoy_y = state.buoy_y + buoy_drift_vy * self.dt
+        buoy_out_of_bounds = (next_buoy_x * next_buoy_x + next_buoy_y * next_buoy_y) > (
+            self.radius_m * self.radius_m
+        )
 
         out_of_bounds = (next_x * next_x + next_y * next_y) > (self.radius_m * self.radius_m)
         found = self._found_buoy(next_x, next_y, next_heading, next_buoy_x, next_buoy_y)
@@ -327,6 +334,7 @@ class BuoySearchEnv:
         info = {
             "success": found,
             "out_of_bounds": out_of_bounds,
+            "buoy_out_of_bounds": buoy_out_of_bounds,
             "timed_out": timed_out,
             "explore_reward": explore_reward,
             "x": next_x,
@@ -343,7 +351,8 @@ class BuoySearchEnv:
 
     def observation_space(self, params=None):
         obs_dim = (
-            4
+            3
+            + int(self.include_episode_time_obs)
             + int(self.include_center_distance_obs)
             + (2 if self.include_current_obs else 0)
             + (2 if self.include_wind_obs else 0)

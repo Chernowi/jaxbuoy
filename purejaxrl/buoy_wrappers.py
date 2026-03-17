@@ -21,8 +21,10 @@ class LogEnvState:
     env_state: environment.EnvState
     episode_returns: float
     episode_lengths: int
+    episode_buoy_out_of_bounds: float
     returned_episode_returns: float
     returned_episode_lengths: int
+    returned_episode_buoy_out_of_bounds: float
     timestep: int
 
 
@@ -32,7 +34,7 @@ class LogWrapper(GymnaxWrapper):
         self, key: chex.PRNGKey, params: Optional[environment.EnvParams] = None
     ) -> Tuple[chex.Array, environment.EnvState]:
         obs, env_state = self._env.reset(key, params)
-        state = LogEnvState(env_state, 0, 0, 0, 0, 0)
+        state = LogEnvState(env_state, 0, 0, 0, 0, 0, 0, 0)
         return obs, state
 
     @partial(jax.jit, static_argnums=(0,))
@@ -48,18 +50,31 @@ class LogWrapper(GymnaxWrapper):
         )
         new_episode_return = state.episode_returns + reward
         new_episode_length = state.episode_lengths + 1
+        buoy_out_of_bounds = info.get(
+            "buoy_out_of_bounds",
+            jnp.zeros_like(done, dtype=jnp.bool_),
+        ).astype(jnp.float32)
+        new_episode_buoy_out_of_bounds = jnp.maximum(
+            state.episode_buoy_out_of_bounds,
+            buoy_out_of_bounds,
+        )
         state = LogEnvState(
             env_state=env_state,
             episode_returns=new_episode_return * (1 - done),
             episode_lengths=new_episode_length * (1 - done),
+            episode_buoy_out_of_bounds=new_episode_buoy_out_of_bounds * (1 - done),
             returned_episode_returns=state.returned_episode_returns * (1 - done)
             + new_episode_return * done,
             returned_episode_lengths=state.returned_episode_lengths * (1 - done)
             + new_episode_length * done,
+            returned_episode_buoy_out_of_bounds=state.returned_episode_buoy_out_of_bounds
+            * (1 - done)
+            + new_episode_buoy_out_of_bounds * done,
             timestep=state.timestep + 1,
         )
         info["returned_episode_returns"] = state.returned_episode_returns
         info["returned_episode_lengths"] = state.returned_episode_lengths
+        info["returned_episode_buoy_out_of_bounds"] = state.returned_episode_buoy_out_of_bounds
         info["timestep"] = state.timestep
         info["returned_episode"] = done
         return obs, state, reward, done, info
