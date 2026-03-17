@@ -260,8 +260,8 @@ def main():
             env,
             args.seed,
             spiral,
-            max_steps=sim_steps,
             include_buoy=False,
+            ignore_timeout=True,
         )
         estimate = estimate_spiral_coverage_time(
             env,

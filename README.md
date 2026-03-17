@@ -143,7 +143,7 @@ python purejaxrl/visualize_buoy.py --run buoy_thruster_ppo --policy-mode spiral 
 Tune spiral parameters interactively with live trajectory and coverage feedback:
 
 ```bash
-python purejaxrl/tune_spiral_policy.py --config configs/buoy_thruster_ppo_rnn_curiosity.yaml
+python purejaxrl/tune_spiral_policy.py --config configs/buoy_thruster_ppo_rnn_curiosity_wind.yaml
 ```
 
 You can also load environment settings from an existing run:

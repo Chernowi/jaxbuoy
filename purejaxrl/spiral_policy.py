@@ -133,7 +133,13 @@ def spiral_action(state, env, spiral: SpiralParams, waypoints=None, speed_mps: f
     return jnp.asarray([left, right], dtype=jnp.float32)
 
 
-def step_no_reset(env, state, action, ignore_buoy: bool = False):
+def step_no_reset(
+    env,
+    state,
+    action,
+    ignore_buoy: bool = False,
+    ignore_timeout: bool = False,
+):
     if env.action_mode == "simplified_rudder":
         steer_cmd = jnp.clip(action[0], 0.0, 1.0)
         rudder_angle = (2.0 * steer_cmd - 1.0) * env._max_rudder_rad
@@ -161,7 +167,7 @@ def step_no_reset(env, state, action, ignore_buoy: bool = False):
     else:
         found = env._found_buoy(next_x, next_y, next_heading, next_buoy_x, next_buoy_y)
     next_step_count = state.step_count + 1
-    timed_out = next_step_count >= env.max_steps
+    timed_out = jnp.array(False) if ignore_timeout else (next_step_count >= env.max_steps)
     done = out_of_bounds | found | timed_out
 
     if env.use_visited:
@@ -209,8 +215,12 @@ def rollout_spiral(
     spiral: SpiralParams,
     max_steps: Optional[int] = None,
     include_buoy: bool = True,
+    ignore_timeout: bool = False,
 ):
-    max_steps = int(max_steps) if max_steps is not None else int(env.max_steps)
+    if max_steps is not None:
+        max_steps = int(max_steps)
+    elif not ignore_timeout:
+        max_steps = int(env.max_steps)
     waypoints, speed_mps = build_archimedean_waypoints(env, spiral)
     key = jnp.array([0, 0], dtype=jnp.uint32)
     key = key.at[0].set(np.uint32(seed & 0xFFFFFFFF))
@@ -230,7 +240,11 @@ def rollout_spiral(
     out_of_bounds = False
     timed_out = False
 
-    for _ in range(max_steps):
+    rollout_step = 0
+    while True:
+        if max_steps is not None and rollout_step >= max_steps:
+            break
+
         action = spiral_action(
             state,
             env,
@@ -243,6 +257,7 @@ def rollout_spiral(
             state,
             action,
             ignore_buoy=not bool(include_buoy),
+            ignore_timeout=ignore_timeout,
         )
 
         cum_reward += float(reward)
@@ -260,6 +275,7 @@ def rollout_spiral(
         found = bool(found_jnp)
         out_of_bounds = bool(oob_jnp)
         timed_out = bool(timeout_jnp)
+        rollout_step += 1
 
         if done:
             break
