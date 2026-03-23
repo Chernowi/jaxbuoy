@@ -27,7 +27,7 @@ class BuoySearchEnv:
         self.cfg = dict(cfg)
         self.radius_m = float(self.cfg.get("radius_m", 100.0))
         self.max_steps = int(self.cfg.get("max_steps", 1200))
-        self.dt = float(self.cfg.get("decision_dt_s", 1.0))
+        self.dt = float(self.cfg.get("decision_dt_s", 2.0))
 
         self.action_mode = self.cfg.get("action_mode", "simplified_rudder")
         self.max_speed_mps = float(self.cfg.get("max_speed_mps", 2.0))
@@ -186,6 +186,15 @@ class BuoySearchEnv:
         )
         return updated, explore_reward
 
+    def _explore_reward_scale(self, params):
+        if params is None:
+            return jnp.array(1.0, dtype=jnp.float32)
+        if isinstance(params, dict):
+            scale = params.get("explore_reward_scale", 1.0)
+        else:
+            scale = params
+        return jnp.maximum(jnp.asarray(scale, dtype=jnp.float32), 0.0)
+
     def _world_to_grid(self, x, y):
         gx = ((x + self.radius_m) / (2.0 * self.radius_m) * self.grid_size).astype(jnp.int32)
         gy = ((y + self.radius_m) / (2.0 * self.radius_m) * self.grid_size).astype(jnp.int32)
@@ -287,7 +296,7 @@ class BuoySearchEnv:
         found = self._found_buoy(next_x, next_y, next_heading, next_buoy_x, next_buoy_y)
         next_step_count = state.step_count + 1
         timed_out = next_step_count >= self.max_steps
-        done = out_of_bounds | found | timed_out
+        done = out_of_bounds | buoy_out_of_bounds | found | timed_out
 
         if self.use_visited:
             next_visited, explore_reward = self._update_visited(
@@ -297,11 +306,15 @@ class BuoySearchEnv:
             next_visited = state.visited
             explore_reward = jnp.array(0.0, dtype=jnp.float32)
 
+        explore_reward_scale = self._explore_reward_scale(params)
+        scaled_explore_reward = explore_reward * explore_reward_scale
+
         reward = (
             self.step_reward
-            + explore_reward
+            + scaled_explore_reward
             + found.astype(jnp.float32) * self.found_reward
-            - out_of_bounds.astype(jnp.float32) * self.out_of_bounds_penalty
+            - (out_of_bounds | buoy_out_of_bounds).astype(jnp.float32)
+            * self.out_of_bounds_penalty
             - timed_out.astype(jnp.float32) * self.timeout_penalty
         )
 
@@ -336,7 +349,9 @@ class BuoySearchEnv:
             "out_of_bounds": out_of_bounds,
             "buoy_out_of_bounds": buoy_out_of_bounds,
             "timed_out": timed_out,
-            "explore_reward": explore_reward,
+            "explore_reward": scaled_explore_reward,
+            "explore_reward_raw": explore_reward,
+            "explore_reward_scale": explore_reward_scale,
             "x": next_x,
             "y": next_y,
             "heading": next_heading,

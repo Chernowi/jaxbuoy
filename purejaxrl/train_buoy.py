@@ -41,6 +41,10 @@ def _default_ppo_cfg(overrides):
         "ACTIVATION": "tanh",
         "HIDDEN_SIZES": [256, 256],
         "ANNEAL_LR": True,
+        "ANNEAL_EXPLORE_REWARD": False,
+        "EXPLORE_REWARD_START_SCALE": 1.0,
+        "EXPLORE_REWARD_END_SCALE": 0.0,
+        "EXPLORE_REWARD_ANNEAL_FRACTION": 1.0,
         "NORMALIZE_OBS": False,
         "NORMALIZE_REWARD": False,
         "DEBUG": False,
@@ -67,6 +71,10 @@ def _default_ppo_rnn_cfg(overrides):
         "HIDDEN_SIZES": [128],
         "RNN_HIDDEN_SIZE": 128,
         "ANNEAL_LR": True,
+        "ANNEAL_EXPLORE_REWARD": False,
+        "EXPLORE_REWARD_START_SCALE": 1.0,
+        "EXPLORE_REWARD_END_SCALE": 0.0,
+        "EXPLORE_REWARD_ANNEAL_FRACTION": 1.0,
         "NORMALIZE_OBS": False,
         "NORMALIZE_REWARD": False,
         "DEBUG": False,
@@ -98,6 +106,10 @@ def _default_ppo_rnn_curiosity_cfg(overrides):
         "HIDDEN_SIZES": [128],
         "RNN_HIDDEN_SIZE": 128,
         "ANNEAL_LR": True,
+        "ANNEAL_EXPLORE_REWARD": False,
+        "EXPLORE_REWARD_START_SCALE": 1.0,
+        "EXPLORE_REWARD_END_SCALE": 0.0,
+        "EXPLORE_REWARD_ANNEAL_FRACTION": 1.0,
         "NORMALIZE_OBS": False,
         "NORMALIZE_REWARD": False,
         "DEBUG": False,
@@ -233,10 +245,7 @@ def _render_checkpoint(run_dir, run_name, output_root, full_cfg):
     seed = int(render_cfg.get("seed", eval_cfg.get("seed", run_cfg.get("seed", 0))))
     policy_mode = str(render_cfg.get("policy_mode", eval_cfg.get("policy_mode", "stochastic")))
     num_renders = int(render_cfg.get("num_renders", 1))
-    render_every = int(render_cfg.get("render_every", 4))
     device = str(render_cfg.get("device", eval_cfg.get("device", "auto")))
-    speed = float(render_cfg.get("speed", 20.0))
-    fps = render_cfg.get("fps", None)
     save_name = str(render_cfg.get("save_name", "render.gif"))
     save_path = run_dir / save_name
 
@@ -254,17 +263,11 @@ def _render_checkpoint(run_dir, run_name, output_root, full_cfg):
         policy_mode,
         "--num-renders",
         str(max(1, num_renders)),
-        "--render-every",
-        str(max(1, render_every)),
         "--device",
         device,
-        "--speed",
-        str(speed),
         "--save",
         str(save_path),
     ]
-    if fps is not None:
-        cmd.extend(["--fps", str(float(fps))])
 
     completed = subprocess.run(
         cmd,
@@ -294,8 +297,6 @@ def _render_checkpoint(run_dir, run_name, output_root, full_cfg):
         "seed": int(seed),
         "policy_mode": policy_mode,
         "device": device,
-        "render_every": int(max(1, render_every)),
-        "speed": float(speed),
     }
 
 

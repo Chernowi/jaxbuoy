@@ -160,6 +160,9 @@ def step_no_reset(
     next_y = state.y + (speed * jnp.sin(next_heading) + drift_vy) * env.dt
     next_buoy_x = state.buoy_x + buoy_drift_vx * env.dt
     next_buoy_y = state.buoy_y + buoy_drift_vy * env.dt
+    buoy_out_of_bounds = (next_buoy_x * next_buoy_x + next_buoy_y * next_buoy_y) > (
+        env.radius_m * env.radius_m
+    )
 
     out_of_bounds = (next_x * next_x + next_y * next_y) > (env.radius_m * env.radius_m)
     if ignore_buoy:
@@ -168,7 +171,7 @@ def step_no_reset(
         found = env._found_buoy(next_x, next_y, next_heading, next_buoy_x, next_buoy_y)
     next_step_count = state.step_count + 1
     timed_out = jnp.array(False) if ignore_timeout else (next_step_count >= env.max_steps)
-    done = out_of_bounds | found | timed_out
+    done = out_of_bounds | buoy_out_of_bounds | found | timed_out
 
     if env.use_visited:
         next_visited, explore_reward = env._update_visited(
@@ -182,7 +185,8 @@ def step_no_reset(
         env.step_reward
         + explore_reward
         + found.astype(jnp.float32) * env.found_reward
-        - out_of_bounds.astype(jnp.float32) * env.out_of_bounds_penalty
+        - (out_of_bounds | buoy_out_of_bounds).astype(jnp.float32)
+        * env.out_of_bounds_penalty
         - timed_out.astype(jnp.float32) * env.timeout_penalty
     )
 
@@ -197,7 +201,16 @@ def step_no_reset(
     )
     next_obs = env._get_obs(next_state)
 
-    return next_obs, next_state, reward.astype(jnp.float32), done, found, out_of_bounds, timed_out
+    return (
+        next_obs,
+        next_state,
+        reward.astype(jnp.float32),
+        done,
+        found,
+        out_of_bounds,
+        timed_out,
+        buoy_out_of_bounds,
+    )
 
 
 def visited_fraction(env, visited):
@@ -252,7 +265,7 @@ def rollout_spiral(
             waypoints=waypoints,
             speed_mps=speed_mps,
         )
-        _, state, reward, done_jnp, found_jnp, oob_jnp, timeout_jnp = step_no_reset(
+        _, state, reward, done_jnp, found_jnp, oob_jnp, timeout_jnp, buoy_oob_jnp = step_no_reset(
             env,
             state,
             action,
@@ -274,6 +287,7 @@ def rollout_spiral(
         done = bool(done_jnp)
         found = bool(found_jnp)
         out_of_bounds = bool(oob_jnp)
+        _ = bool(buoy_oob_jnp)
         timed_out = bool(timeout_jnp)
         rollout_step += 1
 
@@ -334,7 +348,7 @@ def estimate_spiral_coverage_time(
             waypoints=waypoints,
             speed_mps=speed_mps,
         )
-        _, state, _, done_jnp, _, _, _ = step_no_reset(env, state, action)
+        _, state, _, done_jnp, _, _, _, _ = step_no_reset(env, state, action)
         done = bool(done_jnp)
         if done:
             break

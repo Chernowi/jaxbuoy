@@ -13,7 +13,7 @@ algorithm:
     CURIOSITY_ACTIVATION: relu
     NUM_ENVS: 256
     NUM_STEPS: 128
-    TOTAL_TIMESTEPS: 100000000
+    TOTAL_TIMESTEPS: 50000000
     UPDATE_EPOCHS: 4
     NUM_MINIBATCHES: 8
     GAMMA: 0.99
@@ -61,8 +61,8 @@ environment:
   include_episode_time_obs: true
   include_current_obs: false
   include_wind_obs: false
-  max_current_speed_mps: 0.1
-  max_wind_speed_mps: 0.1
+  max_current_speed_mps: 0.0
+  max_wind_speed_mps: 0.0
   wind_buoy_scale: 0.5
 
 wandb:

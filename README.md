@@ -98,18 +98,16 @@ python purejaxrl/grid_search_buoy.py \
 ### Visualize
 
 ```bash
-python purejaxrl/visualize_buoy.py --run buoy_thruster_ppo --speed 20
+python purejaxrl/visualize_buoy.py --run buoy_thruster_ppo
 ```
 
-Use `--speed` to control playback speed.
+Saved visualizations use one frame per simulated RL step at a fixed playback rate of 4 steps/second.
 
 To save a rendered animation instead of opening a window:
 
 ```bash
-python purejaxrl/visualize_buoy.py --run buoy_thruster_ppo --save outputs/episode.mp4 --speed 20
+python purejaxrl/visualize_buoy.py --run runs/fast_wind_100M --save outputs/episode.mp4
 ```
-
-Use `--render-every` to skip frames for faster generation and `--fps` to control output framerate.
 
 ### Deterministic spiral baseline (coverage-time based)
 
@@ -137,7 +135,7 @@ python purejaxrl/evaluate_buoy.py --run buoy_thruster_ppo --policy-mode spiral -
 Visualize a spiral episode:
 
 ```bash
-python purejaxrl/visualize_buoy.py --run buoy_thruster_ppo --policy-mode spiral --speed 20
+python purejaxrl/visualize_buoy.py --run fast_wind_100M --policy-mode stochastic
 ```
 
 Tune spiral parameters interactively with live trajectory and coverage feedback:

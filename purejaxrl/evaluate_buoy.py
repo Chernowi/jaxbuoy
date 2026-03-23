@@ -125,6 +125,7 @@ def _build_eval_fn(
             jnp.array(False),
             jnp.array(False),
             jnp.array(False),
+            jnp.array(False),
             rnn_hidden,
         )
 
@@ -139,6 +140,7 @@ def _build_eval_fn(
                 found_t,
                 oob_t,
                 timeout_t,
+                buoy_oob_t,
                 rnn_hidden_t,
             ) = carry_in
 
@@ -152,6 +154,7 @@ def _build_eval_fn(
                     _found_in,
                     _oob_in,
                     _timeout_in,
+                    buoy_oob_in,
                     rnn_hidden_in,
                 ) = args
 
@@ -178,7 +181,16 @@ def _build_eval_fn(
                         action = pi.mean()
                     rnn_hidden_out = rnn_hidden_in
 
-                next_obs, next_state, reward, next_done, found, oob, timed_out = step_no_reset(
+                (
+                    next_obs,
+                    next_state,
+                    reward,
+                    next_done,
+                    found,
+                    oob,
+                    timed_out,
+                    buoy_oob,
+                ) = step_no_reset(
                     env, state_in, action
                 )
                 return (
@@ -191,6 +203,7 @@ def _build_eval_fn(
                     found,
                     oob,
                     timed_out,
+                    jnp.logical_or(buoy_oob_in, buoy_oob),
                     rnn_hidden_out,
                 )
 
@@ -204,6 +217,7 @@ def _build_eval_fn(
                     found_in,
                     oob_in,
                     timeout_in,
+                    buoy_oob_in,
                     rnn_hidden_in,
                 ) = args
                 return (
@@ -216,6 +230,7 @@ def _build_eval_fn(
                     found_in,
                     oob_in,
                     timeout_in,
+                    buoy_oob_in,
                     rnn_hidden_in,
                 )
 
@@ -232,6 +247,7 @@ def _build_eval_fn(
                     found_t,
                     oob_t,
                     timeout_t,
+                    buoy_oob_t,
                     rnn_hidden_t,
                 ),
             )
@@ -249,6 +265,7 @@ def _build_eval_fn(
             found,
             out_of_bounds,
             timed_out,
+            buoy_out_of_bounds,
             _h,
         ) = final_carry
 
@@ -258,6 +275,7 @@ def _build_eval_fn(
             "success": found.astype(jnp.float32),
             "out_of_bounds": out_of_bounds.astype(jnp.float32),
             "timed_out": timed_out.astype(jnp.float32),
+            "buoy_out_of_bounds": buoy_out_of_bounds.astype(jnp.float32),
         }
 
     return jax.jit(jax.vmap(_rollout_single))
@@ -271,6 +289,22 @@ def _summarize(values):
         "min": float(np.min(values_np)),
         "max": float(np.max(values_np)),
     }
+
+
+def _print_results(summary):
+    print("Evaluation results:")
+    print(
+        f"  Return (mean±std): {summary['episodic_return']['mean']:.3f} ± {summary['episodic_return']['std']:.3f}"
+    )
+    print(
+        f"  Episode length (mean±std): {summary['episodic_length']['mean']:.2f} ± {summary['episodic_length']['std']:.2f}"
+    )
+    print(f"  Success rate: {summary['success_rate']:.3f}")
+    print(f"  Boat out-of-bounds rate: {summary['out_of_bounds_rate']:.3f}")
+    print(f"  Buoy out-of-bounds rate: {summary['buoy_out_of_bounds_rate']:.3f}")
+    print(f"  Timeout rate: {summary['timeout_rate']:.3f}")
+    if "coverage" in summary:
+        print(f"  Coverage (mean): {summary['coverage']['mean']:.3f}")
 
 
 def _angle_wrap_jax(angle):
@@ -354,15 +388,16 @@ def _build_spiral_eval_fn(env, spiral):
             jnp.array(False),
             jnp.array(False),
             jnp.array(False),
+            jnp.array(False),
         )
 
         def _scan_step(carry_in, _):
-            state_t, done_t, cum_reward_t, length_t, found_t, oob_t, timeout_t = carry_in
+            state_t, done_t, cum_reward_t, length_t, found_t, oob_t, timeout_t, buoy_oob_t = carry_in
 
             def _active_step(args):
-                state_in, cum_reward_in, length_in, _found_in, _oob_in, _timeout_in = args
+                state_in, cum_reward_in, length_in, _found_in, _oob_in, _timeout_in, buoy_oob_in = args
                 action = _spiral_action(state_in)
-                _obs, next_state, reward, next_done, found, oob, timed_out = step_no_reset(
+                _obs, next_state, reward, next_done, found, oob, timed_out, buoy_oob = step_no_reset(
                     env, state_in, action
                 )
                 return (
@@ -373,10 +408,11 @@ def _build_spiral_eval_fn(env, spiral):
                     found,
                     oob,
                     timed_out,
+                    jnp.logical_or(buoy_oob_in, buoy_oob),
                 )
 
             def _inactive_step(args):
-                state_in, cum_reward_in, length_in, found_in, oob_in, timeout_in = args
+                state_in, cum_reward_in, length_in, found_in, oob_in, timeout_in, buoy_oob_in = args
                 return (
                     state_in,
                     jnp.array(True),
@@ -385,18 +421,28 @@ def _build_spiral_eval_fn(env, spiral):
                     found_in,
                     oob_in,
                     timeout_in,
+                    buoy_oob_in,
                 )
 
             carry_out = jax.lax.cond(
                 done_t,
                 _inactive_step,
                 _active_step,
-                (state_t, cum_reward_t, length_t, found_t, oob_t, timeout_t),
+                (state_t, cum_reward_t, length_t, found_t, oob_t, timeout_t, buoy_oob_t),
             )
             return carry_out, ()
 
         final_carry, _ = jax.lax.scan(_scan_step, carry, xs=None, length=env.max_steps)
-        state_f, _done, cum_reward, episode_length, found, out_of_bounds, timed_out = final_carry
+        (
+            state_f,
+            _done,
+            cum_reward,
+            episode_length,
+            found,
+            out_of_bounds,
+            timed_out,
+            buoy_out_of_bounds,
+        ) = final_carry
 
         return {
             "episodic_return": cum_reward,
@@ -404,6 +450,7 @@ def _build_spiral_eval_fn(env, spiral):
             "success": found.astype(jnp.float32),
             "out_of_bounds": out_of_bounds.astype(jnp.float32),
             "timed_out": timed_out.astype(jnp.float32),
+            "buoy_out_of_bounds": buoy_out_of_bounds.astype(jnp.float32),
             "coverage": _coverage_from_state(state_f),
         }
 
@@ -422,6 +469,9 @@ def _evaluate_spiral_policy(env, episodes, seed, device, spiral):
         "success_rate": float(np.mean(np.asarray(result["success"], dtype=np.float32))),
         "out_of_bounds_rate": float(np.mean(np.asarray(result["out_of_bounds"], dtype=np.float32))),
         "timeout_rate": float(np.mean(np.asarray(result["timed_out"], dtype=np.float32))),
+        "buoy_out_of_bounds_rate": float(
+            np.mean(np.asarray(result["buoy_out_of_bounds"], dtype=np.float32))
+        ),
         "coverage": _summarize(result["coverage"]),
     }
 
@@ -621,8 +671,12 @@ def main():
             "success_rate": float(np.mean(np.asarray(result["success"], dtype=np.float32))),
             "out_of_bounds_rate": float(np.mean(np.asarray(result["out_of_bounds"], dtype=np.float32))),
             "timeout_rate": float(np.mean(np.asarray(result["timed_out"], dtype=np.float32))),
+            "buoy_out_of_bounds_rate": float(
+                np.mean(np.asarray(result["buoy_out_of_bounds"], dtype=np.float32))
+            ),
         }
 
+    _print_results(summary)
     print(json.dumps(summary, indent=2))
 
     if args.save_json is not None:

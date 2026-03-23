@@ -183,7 +183,16 @@ def _build_rollout_fn(
                         action = pi.mean()
                     rnn_hidden_out = rnn_hidden_in
 
-                next_obs, next_state, reward, next_done, found, oob, timed_out = step_no_reset(
+                (
+                    next_obs,
+                    next_state,
+                    reward,
+                    next_done,
+                    found,
+                    oob,
+                    timed_out,
+                    _buoy_oob,
+                ) = step_no_reset(
                     env, state_in, action
                 )
                 cum_reward_out = cum_reward_in + reward
@@ -302,12 +311,6 @@ def main():
         help="Root output directory used during training",
     )
     parser.add_argument(
-        "--speed",
-        type=float,
-        default=20.0,
-        help="Playback speed multiplier (higher is faster)",
-    )
-    parser.add_argument(
         "--seed",
         type=int,
         default=0,
@@ -363,12 +366,6 @@ def main():
         help="JAX device used for rollout (auto prefers GPU)",
     )
     parser.add_argument(
-        "--render-every",
-        type=int,
-        default=4,
-        help="Render every Nth frame (higher is faster)",
-    )
-    parser.add_argument(
         "--realtime",
         action="store_true",
         help="Sleep between frames to mimic real-time playback",
@@ -378,12 +375,6 @@ def main():
         type=str,
         default=None,
         help="Optional output file path (e.g. episode.mp4 or episode.gif) to save animation instead of opening a window",
-    )
-    parser.add_argument(
-        "--fps",
-        type=float,
-        default=None,
-        help="Output FPS when using --save (default derives from speed and render-every)",
     )
     args = parser.parse_args()
     if args.num_renders < 1:
@@ -455,11 +446,7 @@ def main():
         device = jax.devices("cpu")[0]
         print(f"Using deterministic spiral baseline with params: {spiral_params_dict(spiral)}")
 
-    render_every = max(1, int(args.render_every))
-    dt = max(0.001, 0.05 / max(args.speed, 1e-3))
-    dt *= render_every
-    default_fps = max(1.0, min(120.0, 1.0 / max(dt, 1e-6)))
-    output_fps = float(args.fps) if args.fps is not None else default_fps
+    playback_steps_per_second = 4.0
     radius = float(env_cfg.get("radius_m", 100.0))
 
     for render_idx in range(args.num_renders):
@@ -531,8 +518,10 @@ def main():
             timed_out = bool(np.asarray(timeout_hist[end_idx - 1])) if end_idx > 0 else False
         rollout_time = time.perf_counter() - rollout_start
 
+        episode_steps = max(0, len(xs) - 1)
         print(
-            f"Render {render_idx + 1}/{args.num_renders} (seed={episode_seed}) generated {len(xs)} frames in {rollout_time:.3f}s"
+            f"Render {render_idx + 1}/{args.num_renders} (seed={episode_seed}) simulated "
+            f"{episode_steps} steps (max {env.max_steps}) in {rollout_time:.3f}s"
         )
 
         current_vx = float(init_state.current_vx)
@@ -665,9 +654,13 @@ def main():
             visited_im = None
             map_boat = None
 
-        frame_indices = np.arange(0, len(xs), render_every, dtype=np.int32)
-        if frame_indices[-1] != len(xs) - 1:
-            frame_indices = np.concatenate([frame_indices, np.array([len(xs) - 1], dtype=np.int32)])
+        if episode_steps > 0:
+            frame_indices = np.arange(1, episode_steps + 1, dtype=np.int32)
+        else:
+            frame_indices = np.asarray([0], dtype=np.int32)
+
+        output_fps = playback_steps_per_second
+        realtime_sleep_s = 1.0 / playback_steps_per_second
 
         heading_len = 5.0
 
@@ -694,7 +687,9 @@ def main():
             save_path.parent.mkdir(parents=True, exist_ok=True)
             ext = save_path.suffix.lower()
             print(
-                f"Saving {len(frame_indices)} rendered frames to {save_path} at {output_fps:.1f} FPS"
+                f"Saving {len(frame_indices)} rendered frames "
+                f"(from {episode_steps} simulated steps) "
+                f"to {save_path} at {output_fps:.3f} FPS"
             )
 
             if ext == ".gif":
@@ -723,7 +718,7 @@ def main():
                 fig.canvas.draw_idle()
                 fig.canvas.flush_events()
                 if args.realtime:
-                    time.sleep(dt)
+                    time.sleep(realtime_sleep_s)
 
         outcome = "found buoy" if found else "out of bounds" if out_of_bounds else "timed out" if timed_out else "ended"
         print(f"Episode outcome: {outcome}")

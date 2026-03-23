@@ -82,6 +82,23 @@ def make_train(ppo_cfg, env_cfg, wandb_enabled=False):
         )
         return cfg["LR"] * frac
 
+    anneal_explore_reward = bool(cfg.get("ANNEAL_EXPLORE_REWARD", False))
+    explore_start_scale = float(cfg.get("EXPLORE_REWARD_START_SCALE", 1.0))
+    explore_end_scale = float(cfg.get("EXPLORE_REWARD_END_SCALE", 0.0))
+    explore_anneal_fraction = float(cfg.get("EXPLORE_REWARD_ANNEAL_FRACTION", 1.0))
+    explore_anneal_fraction = max(min(explore_anneal_fraction, 1.0), 1e-8)
+    num_updates_minus_one = max(cfg["NUM_UPDATES"] - 1, 1)
+
+    def explore_reward_scale(update_idx):
+        progress = update_idx.astype(jnp.float32) / float(num_updates_minus_one)
+        anneal_progress = jnp.clip(progress / explore_anneal_fraction, 0.0, 1.0)
+        scheduled_scale = (
+            explore_start_scale
+            + (explore_end_scale - explore_start_scale) * anneal_progress
+        )
+        constant_scale = jnp.array(explore_start_scale, dtype=jnp.float32)
+        return jnp.where(anneal_explore_reward, scheduled_scale, constant_scale)
+
     def train(rng):
         network = ActorCriticContinuousRNN(
             action_dim=env.action_space(env_params).shape[0],
@@ -148,6 +165,10 @@ def make_train(ppo_cfg, env_cfg, wandb_enabled=False):
         last_done = jnp.zeros((cfg["NUM_ENVS"],), dtype=bool)
 
         def _update_step(runner_state, update_idx):
+            env_step_params = {
+                "explore_reward_scale": explore_reward_scale(update_idx)
+            }
+
             def _env_step(runner_state, _):
                 (
                     train_state,
@@ -169,7 +190,7 @@ def make_train(ppo_cfg, env_cfg, wandb_enabled=False):
                 rng, step_rng = jax.random.split(rng)
                 step_keys = jax.random.split(step_rng, cfg["NUM_ENVS"])
                 next_obs, next_env_state, ext_reward, done, info = env.step(
-                    step_keys, env_state, action, env_params
+                    step_keys, env_state, action, env_step_params
                 )
 
                 pred_feat = predictor.apply(curiosity_state.params, next_obs)
@@ -403,6 +424,7 @@ def make_train(ppo_cfg, env_cfg, wandb_enabled=False):
                 "buoy_out_of_bounds_episode_ratio": buoy_out_of_bounds_episode_ratio,
                 "timeout_rate": safe_mean(info["timed_out"].astype(jnp.float32)),
                 "explore_reward_mean": jnp.mean(info["explore_reward"]),
+                "explore_reward_scale": jnp.mean(info["explore_reward_scale"]),
                 "extrinsic_reward_mean": jnp.mean(traj_batch.ext_reward),
                 "intrinsic_reward_mean": jnp.mean(traj_batch.int_reward),
                 "reward_total_mean": jnp.mean(traj_batch.reward),
@@ -434,6 +456,7 @@ def make_train(ppo_cfg, env_cfg, wandb_enabled=False):
                         ),
                         "train/timeout_rate": float(m["timeout_rate"]),
                         "train/explore_reward_mean": float(m["explore_reward_mean"]),
+                        "train/explore_reward_scale": float(m["explore_reward_scale"]),
                         "train/extrinsic_reward_mean": float(m["extrinsic_reward_mean"]),
                         "train/intrinsic_reward_mean": float(m["intrinsic_reward_mean"]),
                         "train/reward_total_mean": float(m["reward_total_mean"]),

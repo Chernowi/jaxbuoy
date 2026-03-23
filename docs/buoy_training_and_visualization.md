@@ -31,6 +31,30 @@ Environment observation options (under `environment`):
 Current and wind observations are normalized by `max_current_speed_mps` and
 `max_wind_speed_mps` respectively (or kept at `0` when those maxima are `0`).
 
+Environment dynamics are expressed in SI units: distances are meters and speeds are meters/second.
+Each RL step advances simulation time by `decision_dt_s` seconds (default `2.0`), so a current of
+`0.01 m/s` moves both boat and buoy by `0.02 m` per step.
+
+### Exploration reward annealing (YAML-configurable)
+
+You can linearly anneal exploration reward toward zero during training using `algorithm.params`:
+
+```yaml
+algorithm:
+  params:
+    ANNEAL_EXPLORE_REWARD: true
+    EXPLORE_REWARD_START_SCALE: 1.0
+    EXPLORE_REWARD_END_SCALE: 0.0
+    EXPLORE_REWARD_ANNEAL_FRACTION: 1.0
+```
+
+- `ANNEAL_EXPLORE_REWARD`: enables/disables annealing.
+- `EXPLORE_REWARD_START_SCALE`: multiplier applied at the first update.
+- `EXPLORE_REWARD_END_SCALE`: multiplier reached at the end of annealing.
+- `EXPLORE_REWARD_ANNEAL_FRACTION`: fraction of total updates used for annealing (e.g. `0.5` anneals in first half, then stays at end scale).
+
+The effective exploration scale is logged as `train/explore_reward_scale`.
+
 ## 3) Train an Agent
 
 Run from repository root:
@@ -84,20 +108,21 @@ wandb:
 After training, replay one episode:
 
 ```bash
-python purejaxrl/visualize_buoy.py --run buoy_rudder_ppo --speed 20
+python purejaxrl/visualize_buoy.py --run buoy_rudder_ppo
 ```
 
 ### Visualization options
 
 - `--run`: run folder name inside `runs/`
 - `--output-dir`: root output folder (default: `runs`)
-- `--speed`: playback multiplier (higher = faster)
 - `--seed`: episode seed for replay
+
+Saved visualizations use one frame per simulated RL step and fixed playback at `4` steps/second.
 
 Example with custom output directory and faster playback:
 
 ```bash
-python purejaxrl/visualize_buoy.py --run my_custom_run --output-dir runs --speed 40 --seed 3
+python purejaxrl/visualize_buoy.py --run my_custom_run --output-dir runs --seed 3
 ```
 
 ## 6) Typical Workflow
@@ -135,7 +160,7 @@ python purejaxrl/evaluate_buoy.py --run buoy_thruster_ppo --policy-mode spiral -
 To visualize the deterministic spiral policy:
 
 ```bash
-python purejaxrl/visualize_buoy.py --run buoy_thruster_ppo --policy-mode spiral --speed 20
+python purejaxrl/visualize_buoy.py --run buoy_thruster_ppo --policy-mode spiral
 ```
 
 To tune spiral parameters interactively:
